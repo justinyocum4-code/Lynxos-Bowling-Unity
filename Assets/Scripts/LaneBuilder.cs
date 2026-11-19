@@ -57,20 +57,20 @@ public class LaneBuilder : MonoBehaviour
         return mat;
     }
 
-    private PhysicMaterial MakePhysicMaterial(string name, float friction, float bounciness)
+    private PhysicsMaterial MakePhysicsMaterial(string name, float friction, float bounciness)
     {
-        PhysicMaterial mat = new PhysicMaterial(name);
+        PhysicsMaterial mat = new PhysicsMaterial(name);
         mat.dynamicFriction = friction;
         mat.staticFriction = friction;
         mat.bounciness = bounciness;
-        mat.frictionCombine = PhysicMaterialCombine.Minimum;
-        mat.bounceCombine = PhysicMaterialCombine.Minimum;
+        mat.frictionCombine = PhysicsMaterialCombine.Minimum;
+        mat.bounceCombine = PhysicsMaterialCombine.Minimum;
         return mat;
     }
 
     // Helper: a box with a mesh renderer; collider optional.
     private GameObject CreateBox(string name, Vector3 center, Vector3 size, Material mat,
-        bool withCollider, PhysicMaterial physMat)
+        bool withCollider, PhysicsMaterial physMat)
     {
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
         go.name = name;
@@ -93,7 +93,7 @@ public class LaneBuilder : MonoBehaviour
     {
         float totalLength = BowlingConfig.ApproachLength + BowlingConfig.LaneLength + BowlingConfig.PitLength;
         float centerZ = -BowlingConfig.ApproachLength + totalLength / 2f; // -2 + 11.25 = 9.25
-        PhysicMaterial lanePhys = MakePhysicMaterial("Lane", 0.02f, 0f);
+        PhysicsMaterial lanePhys = MakePhysicsMaterial("Lane", 0.02f, 0f);
         // Lane surface: top face at y = 0.
         CreateBox("Lane", new Vector3(0f, -0.05f, centerZ),
             new Vector3(BowlingConfig.LaneWidth, 0.1f, totalLength), laneMat, true, lanePhys);
@@ -113,7 +113,7 @@ public class LaneBuilder : MonoBehaviour
         float totalLength = BowlingConfig.ApproachLength + BowlingConfig.LaneLength + BowlingConfig.PitLength;
         float centerZ = -BowlingConfig.ApproachLength + totalLength / 2f;
         float laneHalf = BowlingConfig.LaneWidth / 2f;
-        PhysicMaterial gutterPhys = MakePhysicMaterial("Gutter", 0.02f, 0f);
+        PhysicsMaterial gutterPhys = MakePhysicsMaterial("Gutter", 0.02f, 0f);
         for (int s = -1; s <= 1; s += 2)
         {
             // Gutter floor: 0.06 m below the lane surface.
@@ -143,7 +143,7 @@ public class LaneBuilder : MonoBehaviour
     {
         // Invisible walls along the lane edges. Off by default; the manager
         // turns them on in Bumpers mode so the ball can never gutter.
-        PhysicMaterial bumperPhys = MakePhysicMaterial("Bumper", 0f, 0.25f);
+        PhysicsMaterial bumperPhys = MakePhysicsMaterial("Bumper", 0f, 0.25f);
         float laneHalf = BowlingConfig.LaneWidth / 2f;
         float length = BowlingConfig.ApproachLength + BowlingConfig.LaneLength;
         float centerZ = -BowlingConfig.ApproachLength + length / 2f;

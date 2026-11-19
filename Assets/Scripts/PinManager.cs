@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 public class PinManager : MonoBehaviour
 {
-    private class Pin
+    public class Pin
     {
         public int Number;
         public GameObject Obj;
@@ -59,7 +59,7 @@ public class PinManager : MonoBehaviour
         CapsuleCollider col = root.AddComponent<CapsuleCollider>();
         col.radius = BowlingConfig.PinRadius;
         col.height = BowlingConfig.PinHeight;
-        PhysicMaterial phys = new PhysicMaterial("Pin");
+        PhysicsMaterial phys = new PhysicsMaterial("Pin");
         phys.dynamicFriction = 0.3f;
         phys.staticFriction = 0.3f;
         phys.bounciness = 0.1f;

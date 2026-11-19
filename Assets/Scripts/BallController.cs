@@ -49,7 +49,7 @@ public class BallController : MonoBehaviour
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         SphereCollider col = ballObj.GetComponent<SphereCollider>();
-        PhysicMaterial phys = new PhysicMaterial("Ball");
+        PhysicsMaterial phys = new PhysicsMaterial("Ball");
         phys.dynamicFriction = 0.35f;
         phys.staticFriction = 0.35f;
         phys.bounciness = 0.05f;
