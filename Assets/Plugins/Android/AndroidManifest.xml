@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lynxos Bowling — custom manifest. Unity merges this with its generated
+     manifest. The LEANBACK_LAUNCHER entry + banner are what make the game
+     show up in the Google TV apps list; without them the TV launcher hides
+     the app entirely. leanback is required=false so the same APK still
+     installs on phones and tablets. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-feature android:name="android.software.leanback" android:required="false" />
+  <application android:banner="@drawable/app_banner">
+    <activity android:name="com.unity3d.player.UnityPlayerActivity" android:banner="@drawable/app_banner">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+        <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
