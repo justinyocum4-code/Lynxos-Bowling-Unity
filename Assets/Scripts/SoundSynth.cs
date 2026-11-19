@@ -36,32 +36,32 @@ public class SoundSynth : MonoBehaviour
 
     public void PlayCrash(float volume)
     {
-        if (crashClip != null) oneShotSource.PlayOneShot(crashClip, Mathf.Clamp01(volume));
+        if (oneShotSource != null && crashClip != null) oneShotSource.PlayOneShot(crashClip, Mathf.Clamp01(volume));
     }
 
     public void PlayGutter()
     {
-        if (gutterClip != null) oneShotSource.PlayOneShot(gutterClip, 0.7f);
+        if (oneShotSource != null && gutterClip != null) oneShotSource.PlayOneShot(gutterClip, 0.7f);
     }
 
     public void PlayCheer()
     {
-        if (cheerClip != null) oneShotSource.PlayOneShot(cheerClip, 0.8f);
+        if (oneShotSource != null && cheerClip != null) oneShotSource.PlayOneShot(cheerClip, 0.8f);
     }
 
     public void PlayClick()
     {
-        if (clickClip != null) oneShotSource.PlayOneShot(clickClip, 0.6f);
+        if (oneShotSource != null && clickClip != null) oneShotSource.PlayOneShot(clickClip, 0.6f);
     }
 
     public void PlaySpare()
     {
-        if (spareClip != null) oneShotSource.PlayOneShot(spareClip, 0.7f);
+        if (oneShotSource != null && spareClip != null) oneShotSource.PlayOneShot(spareClip, 0.7f);
     }
 
     public void StartRoll()
     {
-        if (rollClip != null && !rollSource.isPlaying)
+        if (rollSource != null && rollClip != null && !rollSource.isPlaying)
         {
             rollSource.clip = rollClip;
             rollSource.volume = 0.25f;
@@ -71,12 +71,12 @@ public class SoundSynth : MonoBehaviour
 
     public void SetRollVolume(float volume)
     {
-        rollSource.volume = Mathf.Clamp01(volume);
+        if (rollSource != null) rollSource.volume = Mathf.Clamp01(volume);
     }
 
     public void StopRoll()
     {
-        if (rollSource.isPlaying) rollSource.Stop();
+        if (rollSource != null && rollSource.isPlaying) rollSource.Stop();
     }
 
     // --- Clip builders (all mono, SampleRate Hz) ---

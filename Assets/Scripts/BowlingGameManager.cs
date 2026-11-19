@@ -48,6 +48,7 @@ public class BowlingGameManager : MonoBehaviour
     private bool gutterThisRoll;
     private int practiceThrows;
     private string lastResult = "";
+    private string startupError;
 
     private void Awake()
     {
@@ -55,36 +56,92 @@ public class BowlingGameManager : MonoBehaviour
         scores[1] = new BowlingScore();
         bestScore = PlayerPrefs.GetInt("LynxosBowlingBest", 0);
 
+        // Every subsystem builds inside its own guard. A failure in one
+        // step must never leave a black silent screen: the camera is built
+        // first (LaneBuilder), and any failure is shown + spoken at the end.
         GameObject laneObj = new GameObject("Lane");
         laneObj.transform.SetParent(transform, false);
         lane = laneObj.AddComponent<LaneBuilder>();
-        lane.Build();
+        TryBuild("Lane", () => lane.Build());
+        if (lane.BuildError != null) NoteError(lane.BuildError);
 
         GameObject pinObj = new GameObject("Pins");
         pinObj.transform.SetParent(transform, false);
         pins = pinObj.AddComponent<PinManager>();
-        pins.Build();
+        TryBuild("Pins", () => pins.Build());
 
         GameObject ballObj = new GameObject("Ball");
         ballObj.transform.SetParent(transform, false);
         ball = ballObj.AddComponent<BallController>();
-        ball.Build();
-        ball.OnPinHit += OnBallHitPin;
+        TryBuild("Ball", () => ball.Build());
+        if (ball != null) ball.OnPinHit += OnBallHitPin;
 
         GameObject soundObj = new GameObject("Sound");
         soundObj.transform.SetParent(transform, false);
-        sound = soundObj.AddComponent<SoundSynth>();
+        try
+        {
+            // AddComponent runs SoundSynth.Awake (clip synthesis) at once.
+            sound = soundObj.AddComponent<SoundSynth>();
+        }
+        catch (System.Exception e)
+        {
+            NoteError("Sound: " + e.GetType().Name + " " + e.Message);
+            sound = null;
+        }
 
         GameObject uiObj = new GameObject("UI");
         uiObj.transform.SetParent(transform, false);
         ui = uiObj.AddComponent<BowlingUI>();
-        ui.Build();
-        WireUI();
+        TryBuild("UI", () => ui.Build());
+        if (ui != null) WireUI();
+        if (ui != null && ui.FontMissing) NoteError("No font found — menu text may be invisible.");
 
         ApplyBallSpec();
-        lane.SetBumpers(bumpersOn);
+        if (lane != null) lane.SetBumpers(bumpersOn);
         Narration.Enabled = voiceOn;
-        ShowMainMenu();
+        if (ui != null)
+        {
+            try
+            {
+                ShowMainMenu();
+            }
+            catch (System.Exception e)
+            {
+                NoteError("Menu: " + e.GetType().Name + " " + e.Message);
+                Debug.LogError("[BowlingGameManager] ShowMainMenu failed: " + e);
+            }
+            if (!string.IsNullOrEmpty(startupError))
+            {
+                try
+                {
+                    ui.ShowStartupError(startupError);
+                    Narration.Speak("Startup problem. " + startupError);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError("[BowlingGameManager] Cannot show startup error: " + e.Message);
+                }
+            }
+        }
+    }
+
+    private void TryBuild(string name, System.Action build)
+    {
+        try
+        {
+            build();
+        }
+        catch (System.Exception e)
+        {
+            NoteError(name + ": " + e.GetType().Name + " " + e.Message);
+            Debug.LogError("[BowlingGameManager] " + name + " build failed: " + e);
+        }
+    }
+
+    private void NoteError(string message)
+    {
+        if (string.IsNullOrEmpty(startupError)) startupError = message;
+        else startupError += " | " + message;
     }
 
     private void WireUI()
@@ -209,7 +266,7 @@ public class BowlingGameManager : MonoBehaviour
     private void GameOver()
     {
         state = GameState.GameOver;
-        sound.StopRoll();
+        if (sound != null) sound.StopRoll();
         int s0 = scores[0].Total();
         int s1 = scores[1].Total();
         string detail;
@@ -409,7 +466,7 @@ public class BowlingGameManager : MonoBehaviour
         crashPlayed = false;
         gutterPlayed = false;
         gutterThisRoll = false;
-        sound.StartRoll();
+        if (sound != null) sound.StartRoll();
         Narration.Speak("Ball away. Power " + Mathf.RoundToInt(power) + ".");
         UpdateHUD();
     }
@@ -422,7 +479,7 @@ public class BowlingGameManager : MonoBehaviour
         if (!crashPlayed)
         {
             crashPlayed = true;
-            sound.PlayCrash(Mathf.Clamp(impactSpeed / 8f, 0.3f, 1f));
+            if (sound != null) sound.PlayCrash(Mathf.Clamp(impactSpeed / 8f, 0.3f, 1f));
         }
     }
 
@@ -437,17 +494,17 @@ public class BowlingGameManager : MonoBehaviour
             if (gutterThisRoll && !gutterPlayed)
             {
                 gutterPlayed = true;
-                sound.PlayGutter();
+                if (sound != null) sound.PlayGutter();
             }
             else if (!gutterThisRoll)
             {
                 // Reached the pins with no reported pin hit (rare): play a
                 // soft crash so the throw still sounds right.
-                sound.PlayCrash(0.4f);
+                if (sound != null) sound.PlayCrash(0.4f);
             }
         }
 
-        sound.SetRollVolume(Mathf.Clamp01(ball.CurrentSpeed / 8f) * 0.3f);
+        if (sound != null) sound.SetRollVolume(Mathf.Clamp01(ball.CurrentSpeed / 8f) * 0.3f);
 
         bool slow = ball.CurrentSpeed < 0.15f;
         if (slow) settleTimer += Time.deltaTime;
@@ -456,7 +513,7 @@ public class BowlingGameManager : MonoBehaviour
         bool fellOut = ball.Position.y < -1f;
         if (settleTimer > 0.6f || z > 20.3f || fellOut || Time.time - rollStartTime > 8f)
         {
-            sound.StopRoll();
+            if (sound != null) sound.StopRoll();
             state = GameState.Resolving;
             lastResult = "Counting pins…";
             StartCoroutine(ResolveRollAfterDelay());
@@ -492,7 +549,7 @@ public class BowlingGameManager : MonoBehaviour
             result = consecutiveStrikes[currentPlayer] >= 3
                 ? "Turkey! Three strikes in a row!"
                 : "Strike!";
-            sound.PlayCheer();
+            if (sound != null) sound.PlayCheer();
         }
         else
         {
@@ -506,7 +563,7 @@ public class BowlingGameManager : MonoBehaviour
             if (isSpare)
             {
                 result = "Spare!";
-                sound.PlaySpare();
+                if (sound != null) sound.PlaySpare();
             }
             else
             {
@@ -532,7 +589,7 @@ public class BowlingGameManager : MonoBehaviour
             if (standing == 0)
             {
                 Narration.Speak("Spare made! Nice shot.");
-                sound.PlaySpare();
+                if (sound != null) sound.PlaySpare();
             }
             else
             {

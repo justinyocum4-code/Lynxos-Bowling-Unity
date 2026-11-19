@@ -34,13 +34,25 @@ public class BallController : MonoBehaviour
         ballObj.name = "BowlingBall";
         ballObj.transform.localScale = Vector3.one * (BowlingConfig.BallRadius * 2f);
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) shader = Shader.Find("Standard");
-        Material mat = new Material(shader);
-        mat.color = new Color(0.08f, 0.08f, 0.10f);
-        if (shader.name.Contains("Universal Render Pipeline")) mat.SetFloat("_Smoothness", 0.6f);
-        else mat.SetFloat("_Glossiness", 0.6f);
-        ballObj.GetComponent<MeshRenderer>().material = mat;
+        Shader shader = null;
+        try
+        {
+            shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("[BallController] Shader lookup failed: " + e.Message);
+        }
+        if (shader != null)
+        {
+            Material mat = new Material(shader);
+            mat.color = new Color(0.08f, 0.08f, 0.10f);
+            if (shader.name.Contains("Universal Render Pipeline")) mat.SetFloat("_Smoothness", 0.6f);
+            else mat.SetFloat("_Glossiness", 0.6f);
+            ballObj.GetComponent<MeshRenderer>().material = mat;
+        }
+        // (shader null = keep the primitive's own default material.)
 
         rb = ballObj.AddComponent<Rigidbody>();
         rb.mass = 6.35f;
@@ -71,8 +83,11 @@ public class BallController : MonoBehaviour
         if (ballObj == null) return;
         ballObj.transform.position = new Vector3(aimX, BowlingConfig.BallRadius, -0.6f);
         ballObj.transform.rotation = Quaternion.identity;
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
         IsRolling = false;
         InGutter = false;
         crashReported = false;
@@ -82,6 +97,7 @@ public class BallController : MonoBehaviour
     // power01: 0..1 from the windup meter. spinSetting: -3..+3.
     public void ThrowBall(float power01, float spinSetting)
     {
+        if (rb == null) return;
         float speed = BowlingConfig.MinThrowSpeed
             + power01 * (BowlingConfig.MaxThrowSpeed - BowlingConfig.MinThrowSpeed)
             + speedBonus;

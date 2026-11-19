@@ -14,15 +14,36 @@ public class LaneBuilder : MonoBehaviour
     private Material goldMat;
     private Material darkDotMat;
 
+    // First failure recorded here, so the manager can show + speak it
+    // instead of dying silent on a black screen.
+    public string BuildError { get; private set; }
+
     public void Build()
     {
-        CreateMaterials();
-        BuildLane();
-        BuildGutters();
-        BuildPit();
-        BuildBumpers();
-        BuildDecor();
+        // Camera + lights FIRST: if any step below throws, the player still
+        // renders a scene instead of a black screen, and the manager can
+        // report the failure on screen. (v1.1 built the camera last, so a
+        // throw in the materials/lane left no camera at all.)
         BuildLightsAndCamera();
+        TryStep("materials", CreateMaterials);
+        TryStep("lane", BuildLane);
+        TryStep("gutters", BuildGutters);
+        TryStep("pit", BuildPit);
+        TryStep("bumpers", BuildBumpers);
+        TryStep("decor", BuildDecor);
+    }
+
+    private void TryStep(string name, System.Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (System.Exception e)
+        {
+            if (BuildError == null) BuildError = "Lane " + name + ": " + e.GetType().Name + " " + e.Message;
+            Debug.LogError("[LaneBuilder] " + name + " failed: " + e);
+        }
     }
 
     public void SetBumpers(bool on)
@@ -40,21 +61,37 @@ public class LaneBuilder : MonoBehaviour
         darkDotMat = MakeMaterial(new Color(0.15f, 0.1f, 0.05f), 0.3f);
     }
 
+    // Returns null (instead of throwing) when no shader can be found, so a
+    // missing shader can never kill the start. Callers keep the primitive's
+    // own default material when this returns null.
     private Material MakeMaterial(Color color, float smoothness)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) shader = Shader.Find("Standard");
-        Material mat = new Material(shader);
-        mat.color = color;
-        if (shader.name.Contains("Universal Render Pipeline"))
+        try
         {
-            mat.SetFloat("_Smoothness", smoothness);
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+            if (shader == null)
+            {
+                Debug.LogWarning("[LaneBuilder] No shader found for material " + color + "; using default.");
+                return null;
+            }
+            Material mat = new Material(shader);
+            mat.color = color;
+            if (shader.name.Contains("Universal Render Pipeline"))
+            {
+                mat.SetFloat("_Smoothness", smoothness);
+            }
+            else
+            {
+                mat.SetFloat("_Glossiness", smoothness);
+            }
+            return mat;
         }
-        else
+        catch (System.Exception e)
         {
-            mat.SetFloat("_Glossiness", smoothness);
+            Debug.LogWarning("[LaneBuilder] Material failed (" + color + "): " + e.Message);
+            return null;
         }
-        return mat;
     }
 
     private PhysicsMaterial MakePhysicsMaterial(string name, float friction, float bounciness)
@@ -76,7 +113,7 @@ public class LaneBuilder : MonoBehaviour
         go.name = name;
         go.transform.position = center;
         go.transform.localScale = size;
-        go.GetComponent<MeshRenderer>().material = mat;
+        if (mat != null) go.GetComponent<MeshRenderer>().material = mat;
         Collider col = go.GetComponent<Collider>();
         if (!withCollider)
         {
@@ -104,7 +141,7 @@ public class LaneBuilder : MonoBehaviour
         line.transform.position = new Vector3(0f, 0.002f, 0f);
         line.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         line.transform.localScale = new Vector3(BowlingConfig.LaneWidth, 0.06f, 1f);
-        line.GetComponent<MeshRenderer>().material = goldMat;
+        if (goldMat != null) line.GetComponent<MeshRenderer>().material = goldMat;
         Object.Destroy(line.GetComponent<Collider>());
     }
 

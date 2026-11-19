@@ -32,21 +32,37 @@ public class PinManager : MonoBehaviour
         RackAll();
     }
 
+    // Returns null (instead of throwing) when no shader can be found, so a
+    // missing shader can never kill the start. Callers keep the primitive's
+    // own default material when this returns null.
     private Material MakeMaterial(Color color, float smoothness)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) shader = Shader.Find("Standard");
-        Material mat = new Material(shader);
-        mat.color = color;
-        if (shader.name.Contains("Universal Render Pipeline"))
+        try
         {
-            mat.SetFloat("_Smoothness", smoothness);
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+            if (shader == null)
+            {
+                Debug.LogWarning("[PinManager] No shader found for material " + color + "; using default.");
+                return null;
+            }
+            Material mat = new Material(shader);
+            mat.color = color;
+            if (shader.name.Contains("Universal Render Pipeline"))
+            {
+                mat.SetFloat("_Smoothness", smoothness);
+            }
+            else
+            {
+                mat.SetFloat("_Glossiness", smoothness);
+            }
+            return mat;
         }
-        else
+        catch (System.Exception e)
         {
-            mat.SetFloat("_Glossiness", smoothness);
+            Debug.LogWarning("[PinManager] Material failed (" + color + "): " + e.Message);
+            return null;
         }
-        return mat;
     }
 
     private Pin CreatePin(int number)
@@ -78,7 +94,7 @@ public class PinManager : MonoBehaviour
         // Primitive capsule is 2 units tall, 1 unit across: scale to
         // 0.38 m tall, 0.12 m across.
         body.transform.localScale = new Vector3(0.12f, 0.19f, 0.12f);
-        body.GetComponent<MeshRenderer>().material = pinMat;
+        if (pinMat != null) body.GetComponent<MeshRenderer>().material = pinMat;
         Object.Destroy(body.GetComponent<Collider>());
 
         // Red neck stripe near the top of the pin.
@@ -88,7 +104,7 @@ public class PinManager : MonoBehaviour
         // Primitive cylinder is 2 units tall, 1 unit across.
         stripe.transform.localScale = new Vector3(0.13f, 0.015f, 0.13f);
         stripe.transform.localPosition = new Vector3(0f, 0.11f, 0f);
-        stripe.GetComponent<MeshRenderer>().material = stripeMat;
+        if (stripeMat != null) stripe.GetComponent<MeshRenderer>().material = stripeMat;
         Object.Destroy(stripe.GetComponent<Collider>());
 
         Pin pin = new Pin();

@@ -26,6 +26,11 @@ public class BowlingUI : MonoBehaviour
 
     private Canvas canvas;
     private Font font;
+    private Text errorText;
+
+    // True when no font could be found at all: menu text cannot render.
+    // The manager reports this as a startup error.
+    public bool FontMissing { get; private set; }
 
     private GameObject menuPanel;
     private GameObject ballPanel;
@@ -60,8 +65,16 @@ public class BowlingUI : MonoBehaviour
 
     public void Build()
     {
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Font.CreateDynamicFontFromOSFont(new string[] { "Arial", "sans-serif" }, 32);
+        // The font ships INSIDE the game (Assets/Resources/DejaVuSans.ttf):
+        // v1.1 relied on the device having a font, and on the TV both the
+        // built-in lookup and the OS lookup came back empty, so no menu
+        // text rendered at all. Built-in + OS fonts stay as fallbacks.
+        font = Resources.Load<Font>("DejaVuSans");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        if (font == null) font = Font.CreateDynamicFontFromOSFont(new string[] { "Arial", "sans-serif", "Roboto", "Droid Sans" }, 32);
+        FontMissing = font == null;
+        if (FontMissing) Debug.LogWarning("[BowlingUI] No font found anywhere; menu text cannot render.");
 
         GameObject canvasObj = new GameObject("Canvas");
         canvas = canvasObj.AddComponent<Canvas>();
@@ -81,6 +94,42 @@ public class BowlingUI : MonoBehaviour
         BuildSparePanel();
         BuildHUDPanel();
         BuildGameOverPanel();
+        BuildErrorLabel();
+    }
+
+    // Persistent startup-error line, created last so it draws above every
+    // panel. Hidden until ShowStartupError fills it in.
+    private void BuildErrorLabel()
+    {
+        errorText = CreateText(canvas.gameObject, "", 40, new Color(1f, 0.4f, 0.3f),
+            new Vector2(0.5f, 1f), new Vector2(0f, -210f), new Vector2(1700f, 120f), TextAnchor.MiddleCenter);
+        errorText.gameObject.SetActive(false);
+    }
+
+    // Shows a startup failure in big text (and the manager also speaks it),
+    // so a broken start can never again fail silent on a black screen.
+    public void ShowStartupError(string message)
+    {
+        try
+        {
+            if (errorText == null)
+            {
+                // Build() died before the label existed: make a bare one.
+                if (canvas == null)
+                {
+                    GameObject canvasObj = new GameObject("ErrorCanvas");
+                    canvas = canvasObj.AddComponent<Canvas>();
+                    canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                }
+                BuildErrorLabel();
+            }
+            errorText.text = "STARTUP PROBLEM: " + message;
+            errorText.gameObject.SetActive(true);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("[BowlingUI] Cannot show startup error: " + e.Message);
+        }
     }
 
     // --- Panels ---
@@ -96,8 +145,11 @@ public class BowlingUI : MonoBehaviour
         rt.offsetMax = Vector2.zero;
         if (withBackground)
         {
+            // Semi-transparent on purpose (v1.1 was 0.97): the 3D lane
+            // stays visible behind the menu, so even if the text ever fails
+            // again the screen is never just black.
             Image bg = go.AddComponent<Image>();
-            bg.color = new Color(0.04f, 0.04f, 0.04f, 0.97f);
+            bg.color = new Color(0.04f, 0.04f, 0.04f, 0.55f);
         }
         go.SetActive(false);
         return go;
@@ -295,11 +347,11 @@ public class BowlingUI : MonoBehaviour
         rt.anchoredPosition = new Vector2(0f, y);
         rt.sizeDelta = new Vector2(width, height);
         Image img = go.AddComponent<Image>();
-        img.color = new Color(0.12f, 0.12f, 0.12f);
+        img.color = new Color(0.28f, 0.28f, 0.28f);
 
         Button btn = go.AddComponent<Button>();
         ColorBlock cb = btn.colors;
-        cb.normalColor = new Color(0.12f, 0.12f, 0.12f);
+        cb.normalColor = new Color(0.28f, 0.28f, 0.28f);
         cb.highlightedColor = BowlingConfig.Gold;
         cb.pressedColor = new Color(0.7f, 0.55f, 0.05f);
         cb.selectedColor = BowlingConfig.Gold;
@@ -367,74 +419,79 @@ public class BowlingUI : MonoBehaviour
 
     private void SetOnly(GameObject panel)
     {
-        menuPanel.SetActive(panel == menuPanel);
-        ballPanel.SetActive(panel == ballPanel);
-        sparePanel.SetActive(panel == sparePanel);
-        hudPanel.SetActive(panel == hudPanel);
-        gameOverPanel.SetActive(panel == gameOverPanel);
+        // Null-safe: if a panel failed to build, the others still toggle.
+        if (menuPanel != null) menuPanel.SetActive(panel == menuPanel);
+        if (ballPanel != null) ballPanel.SetActive(panel == ballPanel);
+        if (sparePanel != null) sparePanel.SetActive(panel == sparePanel);
+        if (hudPanel != null) hudPanel.SetActive(panel == hudPanel);
+        if (gameOverPanel != null) gameOverPanel.SetActive(panel == gameOverPanel);
     }
 
     public void ShowMainMenu(int bestScore, string ballName, bool bumpersOn, bool voiceOn)
     {
         SetOnly(menuPanel);
         RefreshMenuLabels(bestScore, ballName, bumpersOn, voiceOn);
-        EventSystem.current.SetSelectedGameObject(menuButtons[0].gameObject);
+        if (menuButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(menuButtons[0].gameObject);
     }
 
     public void RefreshMenuLabels(int bestScore, string ballName, bool bumpersOn, bool voiceOn)
     {
-        menuBest.text = "Best score: " + bestScore;
-        ballButton.GetComponentInChildren<Text>().text = "Ball: " + ballName;
-        bumpersButton.GetComponentInChildren<Text>().text = "Bumpers: " + (bumpersOn ? "On" : "Off");
-        voiceButton.GetComponentInChildren<Text>().text = "Voice: " + (voiceOn ? "On" : "Off");
+        if (menuBest != null) menuBest.text = "Best score: " + bestScore;
+        if (ballButton != null) ballButton.GetComponentInChildren<Text>().text = "Ball: " + ballName;
+        if (bumpersButton != null) bumpersButton.GetComponentInChildren<Text>().text = "Bumpers: " + (bumpersOn ? "On" : "Off");
+        if (voiceButton != null) voiceButton.GetComponentInChildren<Text>().text = "Voice: " + (voiceOn ? "On" : "Off");
     }
 
     public void ShowBallSelect()
     {
         SetOnly(ballPanel);
-        EventSystem.current.SetSelectedGameObject(ballButtons[0].gameObject);
+        if (ballButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(ballButtons[0].gameObject);
     }
 
     public void ShowSpareSelect()
     {
         SetOnly(sparePanel);
-        EventSystem.current.SetSelectedGameObject(spareButtons[0].gameObject);
+        if (spareButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(spareButtons[0].gameObject);
     }
 
     public void ShowHUD()
     {
         SetOnly(hudPanel);
-        EventSystem.current.SetSelectedGameObject(null);
+        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
     }
 
     public void ShowGameOver(string title, string detail)
     {
         SetOnly(gameOverPanel);
-        gameOverTitle.text = title;
-        gameOverDetail.text = detail;
-        EventSystem.current.SetSelectedGameObject(gameOverButtons[0].gameObject);
+        if (gameOverTitle != null) gameOverTitle.text = title;
+        if (gameOverDetail != null) gameOverDetail.text = detail;
+        if (gameOverButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(gameOverButtons[0].gameObject);
     }
 
     public void UpdateHUD(string player, int frame, int ball, int score, int pinsStanding,
         string line, float power01, bool showPower)
     {
-        hudPlayer.text = player;
-        hudFrame.text = "Frame " + frame + "  •  Ball " + ball;
-        hudScore.text = "Score " + score;
-        hudPins.text = "Pins standing: " + pinsStanding;
-        hudLine.text = line;
-        powerFill.fillAmount = power01;
-        hudPower.text = showPower ? "Power " + Mathf.RoundToInt(power01 * 100f) : "";
+        if (hudPlayer != null) hudPlayer.text = player;
+        if (hudFrame != null) hudFrame.text = "Frame " + frame + "  •  Ball " + ball;
+        if (hudScore != null) hudScore.text = "Score " + score;
+        if (hudPins != null) hudPins.text = "Pins standing: " + pinsStanding;
+        if (hudLine != null) hudLine.text = line;
+        if (powerFill != null) powerFill.fillAmount = power01;
+        if (hudPower != null) hudPower.text = showPower ? "Power " + Mathf.RoundToInt(power01 * 100f) : "";
     }
 
     public void UpdateScoreboard(BowlingScore score, int currentFrame)
     {
         for (int f = 1; f <= 10; f++)
         {
-            frameMarkTexts[f - 1].text = score.FrameRolls(f);
+            if (frameMarkTexts[f - 1] != null) frameMarkTexts[f - 1].text = score.FrameRolls(f);
             int cum = score.FrameCumulativeScore(f);
-            frameScoreTexts[f - 1].text = cum < 0 ? "" : cum.ToString();
-            cellImages[f - 1].color = (f == currentFrame)
+            if (frameScoreTexts[f - 1] != null) frameScoreTexts[f - 1].text = cum < 0 ? "" : cum.ToString();
+            if (cellImages[f - 1] != null) cellImages[f - 1].color = (f == currentFrame)
                 ? new Color(0.35f, 0.28f, 0.05f)
                 : new Color(0.12f, 0.12f, 0.12f);
         }
