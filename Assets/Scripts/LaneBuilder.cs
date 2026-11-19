@@ -197,7 +197,7 @@ public class LaneBuilder : MonoBehaviour
 
         GameObject camObj = new GameObject("Main Camera");
         Camera cam = camObj.AddComponent<Camera>();
-        cam.clearColor = new Color(0.02f, 0.02f, 0.03f);
+        cam.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
         cam.fieldOfView = 55f;
         cam.nearClipPlane = 0.1f;
         cam.farClipPlane = 100f;

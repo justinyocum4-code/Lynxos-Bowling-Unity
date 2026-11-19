@@ -15,7 +15,7 @@ public class BallController : MonoBehaviour
 
     public float CurrentSpeed
     {
-        get { return rb != null ? rb.velocity.magnitude : 0f; }
+        get { return rb != null ? rb.linearVelocity.magnitude : 0f; }
     }
 
     public bool IsRolling { get; private set; }
@@ -44,8 +44,8 @@ public class BallController : MonoBehaviour
 
         rb = ballObj.AddComponent<Rigidbody>();
         rb.mass = 6.35f;
-        rb.drag = 0.03f;
-        rb.angularDrag = 0.05f;
+        rb.linearDamping = 0.03f;
+        rb.angularDamping = 0.05f;
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         SphereCollider col = ballObj.GetComponent<SphereCollider>();
@@ -71,7 +71,7 @@ public class BallController : MonoBehaviour
         if (ballObj == null) return;
         ballObj.transform.position = new Vector3(aimX, BowlingConfig.BallRadius, -0.6f);
         ballObj.transform.rotation = Quaternion.identity;
-        rb.velocity = Vector3.zero;
+        rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
         IsRolling = false;
         InGutter = false;
@@ -87,7 +87,7 @@ public class BallController : MonoBehaviour
             + speedBonus;
         speed = Mathf.Clamp(speed, 3f, 11f);
         spin = spinSetting;
-        rb.velocity = new Vector3(0f, 0f, speed);
+        rb.linearVelocity = new Vector3(0f, 0f, speed);
         // Rolling rotation: forward roll around the x axis.
         rb.angularVelocity = new Vector3(speed / BowlingConfig.BallRadius, spin * 2f, 0f);
         IsRolling = true;

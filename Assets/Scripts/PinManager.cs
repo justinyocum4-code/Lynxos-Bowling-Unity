@@ -67,8 +67,8 @@ public class PinManager : MonoBehaviour
 
         Rigidbody rb = root.AddComponent<Rigidbody>();
         rb.mass = 1.5f;
-        rb.drag = 0.05f;
-        rb.angularDrag = 0.08f;
+        rb.linearDamping = 0.05f;
+        rb.angularDamping = 0.08f;
         rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
         // Body: capsule primitive mesh only (its collider is removed).
@@ -137,7 +137,7 @@ public class PinManager : MonoBehaviour
         pin.Obj.SetActive(true);
         pin.Obj.transform.position = pin.Home;
         pin.Obj.transform.rotation = Quaternion.identity;
-        pin.Rb.velocity = Vector3.zero;
+        pin.Rb.linearVelocity = Vector3.zero;
         pin.Rb.angularVelocity = Vector3.zero;
         pin.Active = true;
     }
