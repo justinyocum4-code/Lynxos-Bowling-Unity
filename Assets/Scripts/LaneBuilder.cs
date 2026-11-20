@@ -31,6 +31,7 @@ public class LaneBuilder : MonoBehaviour
         TryStep("pit", BuildPit);
         TryStep("bumpers", BuildBumpers);
         TryStep("decor", BuildDecor);
+        TryStep("alley", BuildAlley);
     }
 
     private void TryStep(string name, System.Action step)
@@ -167,13 +168,20 @@ public class LaneBuilder : MonoBehaviour
     private void BuildPit()
     {
         float backZ = BowlingConfig.HeadPinZ + 2.15f; // 20.45
-        // Back wall: stops the ball and the pins.
-        CreateBox("PitBackWall", new Vector3(0f, 0.5f, backZ),
-            new Vector3(2.0f, 1.0f, 0.1f), wallMat, true, null);
+        // Back wall: stops the ball and the pins. Wide + tall: it is the
+        // pin-deck backdrop of the alley, not a floating slab.
+        CreateBox("PitBackWall", new Vector3(0f, 2.0f, backZ),
+            new Vector3(5.0f, 4.2f, 0.15f), wallMat, true, null);
         // Pit floor: catches anything that flies past the lane end instead
         // of letting it fall out of the world.
         CreateBox("PitFloor", new Vector3(0f, -0.05f - BowlingConfig.GutterDrop, 19.9f),
             new Vector3(2.0f, 0.1f, 3.0f), gutterMat, true, null);
+        // Masking unit above the pins: dark panel with a gold lower edge,
+        // the way a real alley hides the pit machinery.
+        CreateBox("PinMask", new Vector3(0f, 1.7f, backZ - 0.35f),
+            new Vector3(2.4f, 1.1f, 0.08f), wallMat, false, null);
+        CreateBox("PinMaskTrim", new Vector3(0f, 1.12f, backZ - 0.35f),
+            new Vector3(2.4f, 0.07f, 0.09f), goldMat, false, null);
     }
 
     private void BuildBumpers()
@@ -211,10 +219,68 @@ public class LaneBuilder : MonoBehaviour
         }
     }
 
+    // The room itself: floor, side walls with gold trim, ceiling with
+    // light panels, neighbouring lanes, and a ball return. Before v1.1.3
+    // the lane floated in a near-black void, which read as a distracting
+    // empty background at the far end. Now it looks like the inside of a
+    // bowling alley. Visual only (no colliders) except where noted.
+    private void BuildAlley()
+    {
+        Material floorMat = MakeMaterial(new Color(0.10f, 0.08f, 0.06f), 0.15f);
+        Material woodMat = MakeMaterial(new Color(0.22f, 0.14f, 0.07f), 0.35f);
+        Material ceilMat = MakeMaterial(new Color(0.06f, 0.06f, 0.07f), 0.1f);
+        Material neighMat = MakeMaterial(new Color(0.35f, 0.24, 0.12f), 0.35f);
+        Material panelMat = MakeMaterial(new Color(1f, 0.95f, 0.8f), 0.1f);
+
+        // Floor under everything, so there is no void below the lane.
+        CreateBox("AlleyFloor", new Vector3(0f, -0.16f, 8f),
+            new Vector3(14f, 0.1f, 30f), floorMat, false, null);
+
+        // Side walls + gold trim.
+        for (int s = -1; s <= 1; s += 2)
+        {
+            CreateBox("AlleyWall" + (s < 0 ? "L" : "R"), new Vector3(s * 2.6f, 2.05f, 8f),
+                new Vector3(0.15f, 4.1f, 28f), woodMat, false, null);
+            CreateBox("AlleyTrim" + (s < 0 ? "L" : "R"), new Vector3(s * 2.52f, 2.8f, 8f),
+                new Vector3(0.06f, 0.07f, 28f), goldMat, false, null);
+        }
+
+        // Ceiling.
+        CreateBox("AlleyCeiling", new Vector3(0f, 4.15f, 8f),
+            new Vector3(14f, 0.1f, 30f), ceilMat, false, null);
+
+        // Light panels on the ceiling, down the lane.
+        float[] panelZ = new float[] { 1f, 7f, 13f, 18f };
+        for (int i = 0; i < panelZ.Length; i++)
+        {
+            CreateBox("LightPanel" + i, new Vector3(0f, 4.08f, panelZ[i]),
+                new Vector3(1.6f, 0.04f, 0.9f), panelMat, false, null);
+        }
+
+        // Neighbouring lanes, one each side, slightly darker wood.
+        for (int s = -1; s <= 1; s += 2)
+        {
+            CreateBox("NeighbourLane" + (s < 0 ? "L" : "R"),
+                new Vector3(s * 1.62f, -0.05f, 8.15f),
+                new Vector3(BowlingConfig.LaneWidth, 0.1f, 20.3f), neighMat, false, null);
+        }
+
+        // Ball return rail along the right side, with a spare gold ball
+        // resting on it near the approach.
+        CreateBox("BallReturn", new Vector3(1.18f, 0.32f, 8f),
+            new Vector3(0.18f, 0.08f, 20f), gutterMat, false, null);
+        GameObject spare = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        spare.name = "ReturnBall";
+        spare.transform.position = new Vector3(1.18f, 0.45f, -1.2f);
+        spare.transform.localScale = Vector3.one * (BowlingConfig.BallRadius * 2f);
+        if (goldMat != null) spare.GetComponent<MeshRenderer>().material = goldMat;
+        Object.Destroy(spare.GetComponent<Collider>());
+    }
+
     private void BuildLightsAndCamera()
     {
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.32f, 0.32f, 0.36f);
+        RenderSettings.ambientLight = new Color(0.38f, 0.38f, 0.42f);
 
         GameObject sun = new GameObject("Sun");
         Light dir = sun.AddComponent<Light>();
@@ -232,13 +298,32 @@ public class LaneBuilder : MonoBehaviour
         point.color = Color.white;
         pinLight.transform.position = new Vector3(0f, 3f, 19f);
 
+        // Warm ceiling lights down the lane.
+        GameObject midLight = new GameObject("MidLight");
+        Light mid = midLight.AddComponent<Light>();
+        mid.type = LightType.Point;
+        mid.intensity = 0.55f;
+        mid.range = 11f;
+        mid.color = new Color(1f, 0.95f, 0.85f);
+        midLight.transform.position = new Vector3(0f, 3.6f, 7f);
+
         GameObject camObj = new GameObject("Main Camera");
         Camera cam = camObj.AddComponent<Camera>();
-        cam.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
+        cam.backgroundColor = new Color(0.05f, 0.04f, 0.03f);
         cam.fieldOfView = 55f;
         cam.nearClipPlane = 0.1f;
         cam.farClipPlane = 100f;
-        camObj.transform.position = new Vector3(0f, 2.8f, -3.6f);
-        camObj.transform.LookAt(new Vector3(0f, 0f, 14f));
+        // v1.1.3 framing: pulled back and lower than v1.1 (0, 2.8, -3.6).
+        // The old framing put the ball 32.9 deg off the view centre against
+        // a 27.5 deg half-FOV, so the ball sat below the bottom edge of the
+        // screen and was never visible. This framing puts the ball ~17 deg
+        // off centre with the pins near the centre — verified numerically.
+        camObj.transform.position = new Vector3(0f, 1.7f, -4.6f);
+        camObj.transform.LookAt(new Vector3(0f, 0.4f, 12f));
+        // The listener is what lets Unity play ANY sound. v1.1–v1.1.2 had
+        // none: GameBootstrap destroys the template scene (whose camera
+        // carried the listener) and the rebuilt camera never added one, so
+        // every game sound was muted by design.
+        camObj.AddComponent<AudioListener>();
     }
 }

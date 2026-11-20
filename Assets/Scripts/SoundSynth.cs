@@ -9,19 +9,24 @@ public class SoundSynth : MonoBehaviour
 
     private AudioSource oneShotSource;
     private AudioSource rollSource;
+    private AudioSource musicSource;
     private AudioClip crashClip;
     private AudioClip gutterClip;
     private AudioClip cheerClip;
     private AudioClip clickClip;
     private AudioClip spareClip;
     private AudioClip rollClip;
+    private AudioClip musicClip;
 
     private void Awake()
     {
         oneShotSource = gameObject.AddComponent<AudioSource>();
         rollSource = gameObject.AddComponent<AudioSource>();
         rollSource.loop = true;
+        musicSource = gameObject.AddComponent<AudioSource>();
+        musicSource.loop = true;
         BuildClips();
+        StartMusic();
     }
 
     private void BuildClips()
@@ -32,6 +37,23 @@ public class SoundSynth : MonoBehaviour
         clickClip = MakeTone("Click", 0.07f, 880f, 0.5f);
         spareClip = MakeTwoTone("Spare", 0.12f, 660f, 990f);
         rollClip = MakeRollLoop("Roll", 1.2f);
+        musicClip = MakeMusicLoop("Music", 8f);
+    }
+
+    // Quiet background music, looping from the moment the game starts.
+    public void StartMusic()
+    {
+        if (musicSource != null && musicClip != null && !musicSource.isPlaying)
+        {
+            musicSource.clip = musicClip;
+            musicSource.volume = 0.16f;
+            musicSource.Play();
+        }
+    }
+
+    public void StopMusic()
+    {
+        if (musicSource != null && musicSource.isPlaying) musicSource.Stop();
     }
 
     public void PlayCrash(float volume)
@@ -185,6 +207,45 @@ public class SoundSynth : MonoBehaviour
             float fade = Mathf.Min(1f, i / (SampleRate * 0.02f));
             fade *= Mathf.Min(1f, (data.Length - i) / (SampleRate * 0.02f));
             data[i] = brown * 1.6f * fade;
+        }
+        return MakeClip(name, seconds, data);
+    }
+
+    // Background music: a mellow 8-second loop, Am – F – C – G, 2 s per
+    // chord. Soft sine pad (root + third + fifth) with a low bass pulse
+    // on every half-second beat. Quiet by design (0.16 volume) so it
+    // sits under the narration and the pin sounds. Chord boundaries fall
+    // exactly on whole seconds so the loop point lands on a chord change;
+    // a short fade at both ends masks the join.
+    private AudioClip MakeMusicLoop(string name, float seconds)
+    {
+        float[] data = NewBuffer(seconds);
+        // Per chord: pad triad + bass root, in Hz.
+        float[][] chords = new float[][]
+        {
+            new float[] { 220f, 261.63f, 329.63f, 55f },   // Am
+            new float[] { 174.61f, 220f, 261.63f, 43.65f }, // F
+            new float[] { 261.63f, 329.63f, 392f, 65.41f }, // C
+            new float[] { 196f, 246.94f, 293.66f, 49f },    // G
+        };
+        for (int i = 0; i < data.Length; i++)
+        {
+            float t = (float)i / SampleRate;
+            int chord = Mathf.Min(3, (int)(t / 2f));
+            float chordT = t - chord * 2f;
+            float[] notes = chords[chord];
+            float padEnv = Mathf.Min(1f, chordT * 4f) * (1f - chordT * 0.15f);
+            float pad = 0f;
+            for (int n = 0; n < 3; n++)
+            {
+                pad += Mathf.Sin(2f * Mathf.PI * notes[n] * t) * 0.09f;
+            }
+            float beat = t % 0.5f;
+            float bassEnv = Mathf.Exp(-4f * beat);
+            float bass = Mathf.Sin(2f * Mathf.PI * notes[3] * t) * bassEnv * 0.30f;
+            float edge = Mathf.Min(1f, i / (SampleRate * 0.03f));
+            edge *= Mathf.Min(1f, (data.Length - i) / (SampleRate * 0.03f));
+            data[i] = (pad * padEnv + bass) * edge;
         }
         return MakeClip(name, seconds, data);
     }

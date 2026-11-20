@@ -24,6 +24,14 @@ public class BowlingUI : MonoBehaviour
     public System.Action OnPlayAgain;
     public System.Action OnQuitToMenu;
 
+    // Touch controls (tablet): shown only when the device has a touchscreen.
+    public System.Action OnTouchAimLeft;
+    public System.Action OnTouchAimRight;
+    public System.Action OnTouchHookLeft;
+    public System.Action OnTouchHookRight;
+    public System.Action OnTouchThrowDown;
+    public System.Action OnTouchThrowUp;
+
     private Canvas canvas;
     private Font font;
     private Text errorText;
@@ -37,6 +45,10 @@ public class BowlingUI : MonoBehaviour
     private GameObject sparePanel;
     private GameObject hudPanel;
     private GameObject gameOverPanel;
+    private GameObject touchPanel;
+
+    private ButtonSpeaker bumpersSpeaker;
+    private ButtonSpeaker voiceSpeaker;
 
     private List<Button> menuButtons = new List<Button>();
     private List<Button> ballButtons = new List<Button>();
@@ -93,6 +105,7 @@ public class BowlingUI : MonoBehaviour
         BuildBallPanel();
         BuildSparePanel();
         BuildHUDPanel();
+        BuildTouchPanel();
         BuildGameOverPanel();
         BuildErrorLabel();
     }
@@ -122,6 +135,13 @@ public class BowlingUI : MonoBehaviour
                     canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 }
                 BuildErrorLabel();
+            }
+            if (errorText.gameObject.activeSelf)
+            {
+                // A second problem (e.g. the voice failing after startup):
+                // append instead of replacing the first one.
+                errorText.text += " | " + message;
+                return;
             }
             errorText.text = "STARTUP PROBLEM: " + message;
             errorText.gameObject.SetActive(true);
@@ -164,22 +184,24 @@ public class BowlingUI : MonoBehaviour
             new Vector2(0.5f, 1f), new Vector2(0f, -175f), new Vector2(1200f, 50f), TextAnchor.MiddleCenter);
 
         float y = -280f;
-        menuButtons.Add(CreateButton(menuPanel, "Full Game", y, 760f, 84f, () => { if (OnFullGame != null) OnFullGame(); }));
+        menuButtons.Add(CreateButton(menuPanel, "Full Game", y, 760f, 84f, () => { if (OnFullGame != null) OnFullGame(); }, "full_game"));
         y -= 102f;
-        menuButtons.Add(CreateButton(menuPanel, "Practice", y, 760f, 84f, () => { if (OnPractice != null) OnPractice(); }));
+        menuButtons.Add(CreateButton(menuPanel, "Practice", y, 760f, 84f, () => { if (OnPractice != null) OnPractice(); }, "practice"));
         y -= 102f;
-        menuButtons.Add(CreateButton(menuPanel, "Spare Practice", y, 760f, 84f, () => { if (OnSparePracticeMenu != null) OnSparePracticeMenu(); }));
+        menuButtons.Add(CreateButton(menuPanel, "Spare Practice", y, 760f, 84f, () => { if (OnSparePracticeMenu != null) OnSparePracticeMenu(); }, "spare_practice"));
         y -= 102f;
-        menuButtons.Add(CreateButton(menuPanel, "2 Players", y, 760f, 84f, () => { if (OnTwoPlayers != null) OnTwoPlayers(); }));
+        menuButtons.Add(CreateButton(menuPanel, "2 Players", y, 760f, 84f, () => { if (OnTwoPlayers != null) OnTwoPlayers(); }, "two_players"));
         y -= 102f;
-        ballButton = CreateButton(menuPanel, "Ball: Standard 14 lb", y, 760f, 84f, () => { if (OnOpenBallSelect != null) OnOpenBallSelect(); });
+        ballButton = CreateButton(menuPanel, "Ball: Standard 14 lb", y, 760f, 84f, () => { if (OnOpenBallSelect != null) OnOpenBallSelect(); }, "ball_select");
         menuButtons.Add(ballButton);
         y -= 102f;
-        bumpersButton = CreateButton(menuPanel, "Bumpers: Off", y, 760f, 84f, () => { if (OnToggleBumpers != null) OnToggleBumpers(); });
+        bumpersButton = CreateButton(menuPanel, "Bumpers: Off", y, 760f, 84f, () => { if (OnToggleBumpers != null) OnToggleBumpers(); }, "bumpers_off");
         menuButtons.Add(bumpersButton);
+        bumpersSpeaker = bumpersButton.GetComponent<ButtonSpeaker>();
         y -= 102f;
-        voiceButton = CreateButton(menuPanel, "Voice: On", y, 760f, 84f, () => { if (OnToggleVoice != null) OnToggleVoice(); });
+        voiceButton = CreateButton(menuPanel, "Voice: On", y, 760f, 84f, () => { if (OnToggleVoice != null) OnToggleVoice(); }, "voice_on");
         menuButtons.Add(voiceButton);
+        voiceSpeaker = voiceButton.GetComponent<ButtonSpeaker>();
         y -= 102f;
         menuBest = CreateText(menuPanel, "Best score: 0", 30, BowlingConfig.Gold,
             new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(760f, 50f), TextAnchor.MiddleCenter);
@@ -192,16 +214,17 @@ public class BowlingUI : MonoBehaviour
         CreateText(ballPanel, "Choose your ball", 56, BowlingConfig.Gold,
             new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(1200f, 80f), TextAnchor.MiddleCenter);
         float y = -280f;
+        string[] ballKeys = new string[] { "ball_light", "ball_standard", "ball_heavy" };
         for (int i = 0; i < BowlingConfig.Balls.Length; i++)
         {
             int index = i;
             string label = BowlingConfig.Balls[i].Name + BallHint(i);
             ballButtons.Add(CreateButton(ballPanel, label, y, 760f, 84f,
-                () => { if (OnBallSelected != null) OnBallSelected(index); }));
+                () => { if (OnBallSelected != null) OnBallSelected(index); }, ballKeys[i]));
             y -= 102f;
         }
         ballButtons.Add(CreateButton(ballPanel, "Back", y, 760f, 84f,
-            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }));
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back"));
         WireVertical(ballButtons);
     }
 
@@ -218,15 +241,16 @@ public class BowlingUI : MonoBehaviour
         CreateText(sparePanel, "Spare practice — choose a setup", 48, BowlingConfig.Gold,
             new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(1400f, 70f), TextAnchor.MiddleCenter);
         float y = -280f;
+        string[] spareKeys = new string[] { "spare_710", "spare_47", "spare_610", "spare_310", "spare_245", "spare_124", "spare_bucket" };
         for (int i = 0; i < BowlingConfig.SpareSetups.Length; i++)
         {
             int index = i;
             spareButtons.Add(CreateButton(sparePanel, BowlingConfig.SpareSetups[i].Name, y, 760f, 84f,
-                () => { if (OnSpareSelected != null) OnSpareSelected(index); }));
+                () => { if (OnSpareSelected != null) OnSpareSelected(index); }, spareKeys[i]));
             y -= 102f;
         }
         spareButtons.Add(CreateButton(sparePanel, "Back", y, 760f, 84f,
-            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }));
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back"));
         WireVertical(spareButtons);
     }
 
@@ -301,6 +325,99 @@ public class BowlingUI : MonoBehaviour
             new Vector2(0.5f, 0f), new Vector2(0f, 42f), new Vector2(400f, 40f), TextAnchor.MiddleCenter);
     }
 
+    // Touch controls for tablet play: aim + hook buttons and a big hold
+    // to throw button. Lives inside the HUD panel, so it only shows while
+    // playing, and only on devices with a touchscreen — the TV layout is
+    // untouched. Menu buttons already accept taps through the
+    // StandaloneInputModule.
+    private void BuildTouchPanel()
+    {
+        touchPanel = new GameObject("TouchControls");
+        touchPanel.transform.SetParent(hudPanel.transform, false);
+        RectTransform trt = touchPanel.AddComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero;
+        trt.anchorMax = Vector2.one;
+        trt.offsetMin = Vector2.zero;
+        trt.offsetMax = Vector2.zero;
+
+        CreateTouchButton("◀ Aim", new Vector2(-620f, 300f), new Vector2(300f, 110f), 30,
+            () => { if (OnTouchAimLeft != null) OnTouchAimLeft(); });
+        CreateTouchButton("Aim ▶", new Vector2(-300f, 300f), new Vector2(300f, 110f), 30,
+            () => { if (OnTouchAimRight != null) OnTouchAimRight(); });
+        CreateTouchButton("◀ Hook", new Vector2(-620f, 430f), new Vector2(300f, 110f), 30,
+            () => { if (OnTouchHookLeft != null) OnTouchHookLeft(); });
+        CreateTouchButton("Hook ▶", new Vector2(-300f, 430f), new Vector2(300f, 110f), 30,
+            () => { if (OnTouchHookRight != null) OnTouchHookRight(); });
+
+        GameObject throwBtn = CreateTouchButton("HOLD TO THROW", new Vector2(620f, 300f),
+            new Vector2(440f, 160f), 40, null);
+        AddHoldHandlers(throwBtn,
+            () => { if (OnAnyButton != null) OnAnyButton(); if (OnTouchThrowDown != null) OnTouchThrowDown(); },
+            () => { if (OnTouchThrowUp != null) OnTouchThrowUp(); });
+
+        touchPanel.SetActive(Input.touchSupported);
+    }
+
+    private GameObject CreateTouchButton(string label, Vector2 pos, Vector2 size, int fontSize,
+        System.Action onClick)
+    {
+        GameObject go = new GameObject("Touch_" + label);
+        go.transform.SetParent(touchPanel.transform, false);
+        RectTransform rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0f);
+        rt.anchorMax = new Vector2(0.5f, 0f);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+        Image img = go.AddComponent<Image>();
+        img.color = new Color(0.28f, 0.28f, 0.28f);
+
+        Button btn = go.AddComponent<Button>();
+        ColorBlock cb = btn.colors;
+        cb.normalColor = new Color(0.28f, 0.28f, 0.28f);
+        cb.highlightedColor = BowlingConfig.Gold;
+        cb.pressedColor = new Color(0.7f, 0.55f, 0.05f);
+        cb.selectedColor = BowlingConfig.Gold;
+        cb.colorMultiplier = 1f;
+        btn.colors = cb;
+
+        GameObject labelObj = new GameObject("Label");
+        labelObj.transform.SetParent(go.transform, false);
+        RectTransform lrt = labelObj.AddComponent<RectTransform>();
+        lrt.anchorMin = Vector2.zero;
+        lrt.anchorMax = Vector2.one;
+        lrt.offsetMin = Vector2.zero;
+        lrt.offsetMax = Vector2.zero;
+        Text txt = labelObj.AddComponent<Text>();
+        txt.font = font;
+        txt.text = label;
+        txt.fontSize = fontSize;
+        txt.alignment = TextAnchor.MiddleCenter;
+        txt.color = Color.white;
+
+        if (onClick != null)
+        {
+            btn.onClick.AddListener(() =>
+            {
+                if (OnAnyButton != null) OnAnyButton();
+                onClick();
+            });
+        }
+        return go;
+    }
+
+    private void AddHoldHandlers(GameObject go, System.Action down, System.Action up)
+    {
+        EventTrigger trigger = go.AddComponent<EventTrigger>();
+        EventTrigger.Entry downEntry = new EventTrigger.Entry();
+        downEntry.eventID = EventTriggerType.PointerDown;
+        downEntry.callback.AddListener((data) => { if (down != null) down(); });
+        trigger.triggers.Add(downEntry);
+        EventTrigger.Entry upEntry = new EventTrigger.Entry();
+        upEntry.eventID = EventTriggerType.PointerUp;
+        upEntry.callback.AddListener((data) => { if (up != null) up(); });
+        trigger.triggers.Add(upEntry);
+    }
+
     private void BuildGameOverPanel()
     {
         gameOverPanel = CreatePanel("GameOver", true);
@@ -309,9 +426,9 @@ public class BowlingUI : MonoBehaviour
         gameOverDetail = CreateText(gameOverPanel, "", 36, Color.white,
             new Vector2(0.5f, 1f), new Vector2(0f, -330f), new Vector2(1200f, 200f), TextAnchor.MiddleCenter);
         gameOverButtons.Add(CreateButton(gameOverPanel, "Play Again", -580f, 760f, 84f,
-            () => { if (OnPlayAgain != null) OnPlayAgain(); }));
+            () => { if (OnPlayAgain != null) OnPlayAgain(); }, "play_again"));
         gameOverButtons.Add(CreateButton(gameOverPanel, "Main Menu", -682f, 760f, 84f,
-            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }));
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "main_menu_btn"));
         WireVertical(gameOverButtons);
     }
 
@@ -337,7 +454,7 @@ public class BowlingUI : MonoBehaviour
     }
 
     private Button CreateButton(GameObject parent, string label, float y, float width, float height,
-        System.Action onClick)
+        System.Action onClick, string speakKey)
     {
         GameObject go = new GameObject("Btn_" + label);
         go.transform.SetParent(parent.transform, false);
@@ -380,21 +497,26 @@ public class BowlingUI : MonoBehaviour
 
         ButtonSpeaker speaker = go.AddComponent<ButtonSpeaker>();
         speaker.SpeakText = label;
+        speaker.SpeakKey = speakKey;
         speaker.Label = txt;
         return btn;
     }
 
     // Speaks the button label when it gains focus; swaps the label to black
-    // on the gold focused background for contrast.
+    // on the gold focused background for contrast. Uses the baked voice
+    // clip (SpeakKey) when one exists, so buttons speak even on a TV
+    // whose Android TTS is silent; falls back to live TTS otherwise.
     private class ButtonSpeaker : MonoBehaviour, ISelectHandler, IDeselectHandler
     {
         public string SpeakText;
+        public string SpeakKey;
         public Text Label;
 
         public void OnSelect(BaseEventData eventData)
         {
             if (Label != null) Label.color = Color.black;
-            if (!string.IsNullOrEmpty(SpeakText)) Narration.Speak(SpeakText);
+            if (!string.IsNullOrEmpty(SpeakKey)) Narration.SpeakKey(SpeakKey, SpeakText);
+            else if (!string.IsNullOrEmpty(SpeakText)) Narration.Speak(SpeakText);
         }
 
         public void OnDeselect(BaseEventData eventData)
@@ -441,6 +563,9 @@ public class BowlingUI : MonoBehaviour
         if (ballButton != null) ballButton.GetComponentInChildren<Text>().text = "Ball: " + ballName;
         if (bumpersButton != null) bumpersButton.GetComponentInChildren<Text>().text = "Bumpers: " + (bumpersOn ? "On" : "Off");
         if (voiceButton != null) voiceButton.GetComponentInChildren<Text>().text = "Voice: " + (voiceOn ? "On" : "Off");
+        // The toggle buttons speak their CURRENT state when focused.
+        if (bumpersSpeaker != null) bumpersSpeaker.SpeakKey = bumpersOn ? "bumpers_on" : "bumpers_off";
+        if (voiceSpeaker != null) voiceSpeaker.SpeakKey = voiceOn ? "voice_on" : "voice_off";
     }
 
     public void ShowBallSelect()

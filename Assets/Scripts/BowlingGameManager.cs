@@ -20,6 +20,9 @@ public class BowlingGameManager : MonoBehaviour
     private BallController ball;
     private BowlingUI ui;
     private SoundSynth sound;
+    private VoiceBank voiceBank;
+    private bool ttsErrorReported;
+    private float swipeAccum;
 
     private BowlingScore[] scores = new BowlingScore[2];
     private int[] consecutiveStrikes = new int[2];
@@ -96,6 +99,22 @@ public class BowlingGameManager : MonoBehaviour
         if (ui != null) WireUI();
         if (ui != null && ui.FontMissing) NoteError("No font found — menu text may be invisible.");
 
+        // Baked voice clips for the fixed spoken lines (menus, buttons,
+        // strike/spare/gutter). Android TTS is silent on Justin's TV, so
+        // without these the game can never speak its buttons.
+        GameObject vbObj = new GameObject("Voice");
+        vbObj.transform.SetParent(transform, false);
+        try
+        {
+            voiceBank = vbObj.AddComponent<VoiceBank>();
+            Narration.Bank = voiceBank;
+        }
+        catch (System.Exception e)
+        {
+            NoteError("Voice: " + e.GetType().Name + " " + e.Message);
+            voiceBank = null;
+        }
+
         ApplyBallSpec();
         if (lane != null) lane.SetBumpers(bumpersOn);
         Narration.Enabled = voiceOn;
@@ -168,17 +187,24 @@ public class BowlingGameManager : MonoBehaviour
             bumpersOn = !bumpersOn;
             lane.SetBumpers(bumpersOn);
             ui.RefreshMenuLabels(bestScore, BowlingConfig.Balls[ballIndex].Name, bumpersOn, voiceOn);
-            Narration.Speak(bumpersOn ? "Bumpers on." : "Bumpers off.");
+            Narration.SpeakKey(bumpersOn ? "bumpers_on" : "bumpers_off",
+                bumpersOn ? "Bumpers on." : "Bumpers off.");
         };
         ui.OnToggleVoice = () =>
         {
             voiceOn = !voiceOn;
             Narration.Enabled = voiceOn;
             ui.RefreshMenuLabels(bestScore, BowlingConfig.Balls[ballIndex].Name, bumpersOn, voiceOn);
-            if (voiceOn) Narration.Speak("Voice on.");
+            if (voiceOn) Narration.SpeakKey("voice_on", "Voice on.");
         };
         ui.OnPlayAgain = () => StartGame(mode);
         ui.OnQuitToMenu = () => ShowMainMenu();
+        ui.OnTouchAimLeft = () => TouchAim(-1);
+        ui.OnTouchAimRight = () => TouchAim(1);
+        ui.OnTouchHookLeft = () => TouchSpin(-1);
+        ui.OnTouchHookRight = () => TouchSpin(1);
+        ui.OnTouchThrowDown = () => TouchThrowDown();
+        ui.OnTouchThrowUp = () => TouchThrowUp();
     }
 
     private void ApplyBallSpec()
@@ -260,7 +286,7 @@ public class BowlingGameManager : MonoBehaviour
         state = GameState.Menu;
         if (sound != null) sound.StopRoll();
         ui.ShowMainMenu(bestScore, BowlingConfig.Balls[ballIndex].Name, bumpersOn, voiceOn);
-        Narration.Speak("Lynxos Bowling. Main menu.");
+        Narration.SpeakKey("main_menu", "Lynxos Bowling. Main menu.");
     }
 
     private void GameOver()
@@ -274,7 +300,7 @@ public class BowlingGameManager : MonoBehaviour
         {
             string winner = s0 == s1 ? "It is a tie!" : (s0 > s1 ? "Player 1 wins!" : "Player 2 wins!");
             detail = "Player 1: " + s0 + "\nPlayer 2: " + s1 + "\n" + winner;
-            Narration.Speak("Game over. Player 1 scored " + s0 + ". Player 2 scored " + s1 + ". " + winner);
+            Narration.SpeakKey("game_over", "Game over. Player 1 scored " + s0 + ". Player 2 scored " + s1 + ". " + winner);
         }
         else
         {
@@ -286,7 +312,7 @@ public class BowlingGameManager : MonoBehaviour
                 PlayerPrefs.Save();
             }
             detail = "Final score: " + s0 + (newBest ? "\nNew best score!" : "\nBest score: " + bestScore);
-            Narration.Speak("Game over. Final score " + s0 + "." + (newBest ? " New best score!" : ""));
+            Narration.SpeakKey("game_over", "Game over. Final score " + s0 + "." + (newBest ? " New best score!" : ""));
         }
         ui.ShowGameOver("Game Over", detail);
     }
@@ -320,6 +346,15 @@ public class BowlingGameManager : MonoBehaviour
     {
         if (inputLockout > 0f) inputLockout -= Time.deltaTime;
 
+        // Android TTS init is async: if it failed, say so on screen once
+        // the game has settled, instead of staying silent about the voice.
+        if (!ttsErrorReported && Time.time > 2.5f)
+        {
+            ttsErrorReported = true;
+            if (!string.IsNullOrEmpty(Narration.LastError) && ui != null)
+                ui.ShowStartupError("Voice: " + Narration.LastError);
+        }
+
         switch (state)
         {
             case GameState.Aiming:
@@ -342,6 +377,20 @@ public class BowlingGameManager : MonoBehaviour
     private void HandleAimingInput()
     {
         if (inputLockout > 0f) return;
+
+        // Tablet: swipe sideways on the lane to aim (about one board per
+        // 60 px of drag). The touch buttons do the same job one tap at a
+        // time; the swipe is the fast way.
+        if (Input.touchCount > 0)
+        {
+            Touch t = Input.GetTouch(0);
+            if (t.phase == TouchPhase.Moved)
+            {
+                swipeAccum += t.deltaPosition.x;
+                if (swipeAccum > 60f) { swipeAccum = 0f; ChangeAim(1); }
+                else if (swipeAccum < -60f) { swipeAccum = 0f; ChangeAim(-1); }
+            }
+        }
 
         if (IsBackDown())
         {
@@ -395,9 +444,36 @@ public class BowlingGameManager : MonoBehaviour
             state = GameState.Windup;
             windupTime = 0f;
             power = 0f;
-            Narration.Speak("Winding up. Release to throw.");
+            Narration.SpeakKey("winding_up", "Winding up. Release to throw.");
             UpdateHUD();
         }
+    }
+
+    // --- Touch controls (tablet) ---
+
+    public void TouchAim(int dir)
+    {
+        if (state == GameState.Aiming && inputLockout <= 0f) ChangeAim(dir);
+    }
+
+    public void TouchSpin(int dir)
+    {
+        if (state == GameState.Aiming && inputLockout <= 0f) ChangeSpin(dir);
+    }
+
+    public void TouchThrowDown()
+    {
+        if (state != GameState.Aiming || inputLockout > 0f) return;
+        state = GameState.Windup;
+        windupTime = 0f;
+        power = 0f;
+        Narration.SpeakKey("winding_up", "Winding up. Release to throw.");
+        UpdateHUD();
+    }
+
+    public void TouchThrowUp()
+    {
+        if (state == GameState.Windup) ThrowBall();
     }
 
     private void HandleWindupInput()
@@ -467,7 +543,7 @@ public class BowlingGameManager : MonoBehaviour
         gutterPlayed = false;
         gutterThisRoll = false;
         if (sound != null) sound.StartRoll();
-        Narration.Speak("Ball away. Power " + Mathf.RoundToInt(power) + ".");
+        Narration.SpeakKey("ball_away", "Ball away. Power " + Mathf.RoundToInt(power) + ".");
         UpdateHUD();
     }
 
@@ -577,7 +653,7 @@ public class BowlingGameManager : MonoBehaviour
         if (mode == BowlingMode.Practice)
         {
             practiceThrows++;
-            Narration.Speak(result + " Practice throw " + practiceThrows + ".");
+            SpeakResultLine(result, " Practice throw " + practiceThrows + ".");
             pins.RackAll();
             currentBall = 1;
             BeginBall();
@@ -588,12 +664,12 @@ public class BowlingGameManager : MonoBehaviour
         {
             if (standing == 0)
             {
-                Narration.Speak("Spare made! Nice shot.");
+                Narration.SpeakKey("spare_made", "Spare made! Nice shot.");
                 if (sound != null) sound.PlaySpare();
             }
             else
             {
-                Narration.Speak(result + " " + standing + " left. Try again.");
+                SpeakResultLine(result, " " + standing + " left. Try again.");
             }
             pins.RackPins(BowlingConfig.SpareSetups[spareIndex].Pins);
             currentBall = 1;
@@ -603,7 +679,7 @@ public class BowlingGameManager : MonoBehaviour
 
         // Full game / 2 players: record the roll, then advance.
         scores[currentPlayer].AddRoll(fallen);
-        Narration.Speak(result + " Score " + scores[currentPlayer].Total() + ".");
+        SpeakResultLine(result, " Score " + scores[currentPlayer].Total() + ".");
 
         bool frameOver;
         if (currentFrame <= 9)
@@ -674,6 +750,20 @@ public class BowlingGameManager : MonoBehaviour
         if (b2 == 10) return true;
         if (b1 >= 0 && b2 >= 0 && b1 + b2 == 10) return true;
         return false;
+    }
+
+    // Speaks a roll result: the baked clip when the result is a fixed
+    // line (strike, spare, gutter, turkey, all down), live TTS for
+    // anything with numbers in it. The HUD always shows the full line.
+    private void SpeakResultLine(string result, string suffix)
+    {
+        string line = result + suffix;
+        if (result == "Strike!") Narration.SpeakKey("strike", line);
+        else if (result.StartsWith("Turkey!")) Narration.SpeakKey("turkey", line);
+        else if (result == "Spare!") Narration.SpeakKey("spare", line);
+        else if (result == "Gutter ball. No pins down.") Narration.SpeakKey("gutter", line);
+        else if (result == "All pins down!") Narration.SpeakKey("all_down", line);
+        else Narration.Speak(line);
     }
 
     // --- HUD ---

@@ -8,6 +8,14 @@ public static class Narration
 {
     public static bool Enabled = true;
 
+    // Baked voice clips (VoiceBank), when the manager has created one.
+    public static VoiceBank Bank;
+
+    // Why the voice is silent, when we know: shown on screen by the
+    // manager instead of failing silently. Empty while TTS is fine or
+    // while its async init is still pending.
+    public static string LastError { get; private set; }
+
     private static AndroidJavaObject tts;
     private static bool ttsReady = false;
     private static bool ttsFailed = false;
@@ -34,8 +42,23 @@ public static class Narration
             else
             {
                 ttsFailed = true;
+                LastError = "Voice engine failed to start (code " + status + ").";
             }
         }
+    }
+
+    // Fixed line with a baked clip: play the clip when it exists (this is
+    // how menu buttons speak on a TV with no TTS voice), otherwise fall
+    // back to live TTS for the full fallback text.
+    public static void SpeakKey(string key, string fallbackText)
+    {
+        if (!Enabled) return;
+        if (Bank != null && Bank.HasClip(key))
+        {
+            Bank.Play(key);
+            return;
+        }
+        Speak(fallbackText);
     }
 
     public static void Speak(string text)
@@ -61,6 +84,7 @@ public static class Narration
         catch (System.Exception e)
         {
             ttsFailed = true;
+            LastError = "Voice speak failed: " + e.Message;
             Debug.LogWarning("[Narration] TTS speak failed: " + e.Message);
         }
 #else
@@ -93,12 +117,31 @@ public static class Narration
             tts = new AndroidJavaObject("android.speech.tts.TextToSpeech", activity, new TTSInitListener());
             AndroidJavaClass localeClass = new AndroidJavaClass("java.util.Locale");
             AndroidJavaObject localeUS = localeClass.GetStatic<AndroidJavaObject>("US");
-            tts.Call<int>("setLanguage", localeUS);
+            int langResult = tts.Call<int>("setLanguage", localeUS);
+            if (langResult < 0)
+            {
+                // US voice data is often missing on TVs: try plain English,
+                // then whatever the device default is.
+                AndroidJavaObject localeEN = localeClass.GetStatic<AndroidJavaObject>("ENGLISH");
+                langResult = tts.Call<int>("setLanguage", localeEN);
+            }
+            if (langResult < 0)
+            {
+                AndroidJavaObject localeDefault = localeClass.CallStatic<AndroidJavaObject>("getDefault");
+                langResult = tts.Call<int>("setLanguage", localeDefault);
+            }
+            if (langResult < 0)
+            {
+                // -1 = not supported, -2 = voice data missing. Speak calls
+                // will silently do nothing, so record it for the screen.
+                LastError = "No English voice on this TV (code " + langResult + ").";
+            }
             tts.Call<int>("setSpeechRate", 0.95f);
         }
         catch (System.Exception e)
         {
             ttsFailed = true;
+            LastError = "Voice init failed: " + e.Message;
             Debug.LogWarning("[Narration] TTS init failed: " + e.Message);
         }
 #endif

@@ -22,6 +22,7 @@ public class BallController : MonoBehaviour
     public bool InGutter { get; private set; }
 
     private GameObject ballObj;
+    private GameObject aimGuide;
     private Rigidbody rb;
     private float spin;        // -3..+3
     private float hookFactor = 1f;
@@ -47,10 +48,22 @@ public class BallController : MonoBehaviour
         if (shader != null)
         {
             Material mat = new Material(shader);
-            mat.color = new Color(0.08f, 0.08f, 0.10f);
-            if (shader.name.Contains("Universal Render Pipeline")) mat.SetFloat("_Smoothness", 0.6f);
-            else mat.SetFloat("_Glossiness", 0.6f);
+            // v1.1.3: bright gold, not near-black. The old ball (0.08 grey)
+            // was invisible against the dark lane even when in frame.
+            mat.color = BowlingConfig.Gold;
+            if (shader.name.Contains("Universal Render Pipeline")) mat.SetFloat("_Smoothness", 0.8f);
+            else mat.SetFloat("_Glossiness", 0.8f);
             ballObj.GetComponent<MeshRenderer>().material = mat;
+
+            // Gold aim guide on the lane: a thin strip from the foul line
+            // toward the pins at the current aim position, so the aim is
+            // visible as well as spoken.
+            aimGuide = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            aimGuide.name = "AimGuide";
+            aimGuide.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            aimGuide.transform.localScale = new Vector3(0.07f, 6f, 1f);
+            aimGuide.GetComponent<MeshRenderer>().material = mat;
+            Object.Destroy(aimGuide.GetComponent<Collider>());
         }
         // (shader null = keep the primitive's own default material.)
 
@@ -83,6 +96,7 @@ public class BallController : MonoBehaviour
         if (ballObj == null) return;
         ballObj.transform.position = new Vector3(aimX, BowlingConfig.BallRadius, -0.6f);
         ballObj.transform.rotation = Quaternion.identity;
+        if (aimGuide != null) aimGuide.transform.position = new Vector3(aimX, 0.004f, 3.0f);
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
