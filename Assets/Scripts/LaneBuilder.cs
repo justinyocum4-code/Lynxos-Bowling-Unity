@@ -229,7 +229,7 @@ public class LaneBuilder : MonoBehaviour
         Material floorMat = MakeMaterial(new Color(0.10f, 0.08f, 0.06f), 0.15f);
         Material woodMat = MakeMaterial(new Color(0.22f, 0.14f, 0.07f), 0.35f);
         Material ceilMat = MakeMaterial(new Color(0.06f, 0.06f, 0.07f), 0.1f);
-        Material neighMat = MakeMaterial(new Color(0.35f, 0.24, 0.12f), 0.35f);
+        Material neighMat = MakeMaterial(new Color(0.35f, 0.24f, 0.12f), 0.35f);
         Material panelMat = MakeMaterial(new Color(1f, 0.95f, 0.8f), 0.1f);
 
         // Floor under everything, so there is no void below the lane.
