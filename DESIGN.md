@@ -249,3 +249,142 @@ so FindGameShader loads it with Resources.Load<Shader>("Shaders/
 GameUnlit") first and keeps the Shader.Find chain only as a fallback.
 Flat colours are right for this game: wood lane, white pins, red
 stripes, gold ball. Version bump 1.1.4 -> 1.1.5 (build #16).
+
+## v1.2.0 (Nov 20, 2026) — fixes + Crew-style features + progression + better graphics
+
+Justin's go Nov 20 ~03:09 ("build all of it" + "make the graphics look
+a little better"). The APK hunt for Bowling Crew/Clash/Club was dropped
+Nov 20 ~02:38; features were researched from the web instead (report:
+~/workspace/research_notes/bowling-games-features-research-20261120-0838/report.md).
+Headline: NONE of the three games has any accessibility — a blind player
+publicly asked Bowling Crew for a self-voicing mode. IP boundary: Crew/
+Clash/Club-LIKE mechanics with our own code/assets; never copy their art,
+sounds, or code. Deliberately NOT copied: chip entry fees, Autocharge,
+ball-level-beats-skill, first-open ads, live PvP (needs servers).
+
+### The three v1.1.5 bug fixes
+- **One voice at a time:** Narration detects TalkBack via Android
+  AccessibilityManager.isTouchExplorationEnabled() (same AndroidJavaObject
+  pattern as BowlingUI.IsTelevision, cached). When TalkBack is on, the
+  game never speaks UI labels (Narration.SpeakUIKey, used by ButtonSpeaker
+  and all menu/toggle lines) — TalkBack reads them — and only speaks
+  gameplay lines TalkBack cannot know (aim, power, results, score).
+  VoiceBank now QUEUES clips (one at a time) instead of PlayOneShot, so
+  game clips can never stack; PlayNow() interrupts for the fast-changing
+  power-meter bands. SpeakClipThenTTS() plays a baked clip, then speaks
+  a dynamic TTS line after the queued clips finish (delay from
+  VoiceBank.QueuedSeconds()), so clips and TTS never talk over each other.
+- **Real sound:** SoundSynth normalises every clip to ~0.9 peak (music
+  0.55) — the v1.1 clips were near-silent by construction (roll ~0.03,
+  music ~0.02). Crash is now 1.2 s with a slower decay; roll loop gain
+  raised; volumes raised (roll 0.7, music 0.35, gutter/cheer/spare
+  0.9–1.0, click 0.8); the manager's roll-volume cap is 0.8, not 0.3.
+  All triggers unchanged (they were always wired).
+- **Strikes called right:** ResolveRoll counts pins FIRST. A gutter result
+  happens only when fallen == 0; the sticky gutterThisRoll flag is now
+  used for the gutter SOUND only, never for the result.
+
+### New features
+- **Spoken 3-step throw (Crew-style, D-pad + voice):** Step 1 position
+  (Left/Right, board spoken, OK locks), Step 2 power (hold OK to charge,
+  percent spoken at 25/50/75/100 via interrupting clips, release locks),
+  Step 3 hook (Left/Right, hook spoken, OK throws). Back steps back one
+  step. Touch: aim buttons in step 1, hook buttons in step 3, big button
+  charges in step 2 / taps to throw in step 3. Old Aiming/Windup states
+  are gone; the aim/hook/power mechanics underneath are unchanged.
+- **Quick Match:** new BowlingMode, 3 frames (frame 3 plays by 10th-frame
+  rules). Scoring.cs generalised with BowlingScore.TotalFrames (default
+  10); the scoreboard shows only the match's frames. "Win" = 40+ points.
+- **Spoken ball-cam:** SpeakResultLine plays a baked down_0..down_10
+  clip ("Seven pins down.") first, then the result clip (strike/spare/
+  gutter/turkey/all-down); for plain counts the pins left standing are
+  spoken by TTS after the clip (PinManager.StandingNumbers(), 1–10).
+- **Ball types as side-grades:** Light/Standard/Heavy replaced by Heavy
+  16 lb (power), Bouncy 13 lb (hook), Accurate 14 lb (straight) — none
+  stronger overall, none paywalled. Each spec now carries Colour, Cost,
+  Desc; BallController.SetBallColor recolours the ball.
+- **20-second turn timer:** optional, default OFF, toggle in the More
+  panel (PlayerPrefs LB12_TimerOn). Spoken warnings at 10 and 5 seconds;
+  at zero the ball throws with current aim/hook (power 50 if the power
+  step was never reached). Countdown also shows in the HUD status line.
+- **Daily rewards + missions:** 25 coins once a day (PlayerPrefs
+  LB12_LastDaily), announced on the main menu. Three rotating missions a
+  day from a 6-item pool (steps of 2 through the pool by day of year, so
+  the three are always distinct), progress tracked per day, coins on
+  completion, shown with live progress on the More panel.
+- **Achievements:** 10, PlayerPrefs-backed, announced out loud the moment
+  one is earned (clip + name, drained after each resolve/game over so
+  several in one game all get announced), listed in the Achievements
+  panel: First Strike, First Spare, Turkey, Century (100 in a game),
+  Quick Winner (40 in a Quick Match), Clean Game (no gutter balls),
+  Pin Crusher (50 pins in one game), Regular (10 games), New Gear
+  (unlock a ball), Coin Collector (earn 100 coins).
+- **Unlockable balls and gear (GameProgression.cs, new):** coins earned
+  by playing — 1 per pin in scored games (Practice cannot be farmed),
+  +20 full game / +10 Quick Match completion, missions, daily reward.
+  Gear Shop (More panel): 5 unlockable balls (Comet 60, Midnight 120,
+  Thunder 200, Feather 200, Gold Pro 350 — all side-grades), 4 ball
+  colours (Ruby/Ocean 40, Emerald 60, Violet 100), 3 alley looks
+  (Midnight 80, Sunset 100, Emerald 120 — recolour the gold accent trim
+  via LaneBuilder.SetAccentColor). All earned in-game; NO real money, NO
+  IAP code anywhere. All state under the LB12_ PlayerPrefs prefix (no
+  collision with LynxosBowlingBest). Ball select lists owned balls only
+  (rebuilt each time it opens).
+- **Graphics (geometry + colour only, same flat GameUnlit shader):**
+  39 board stripes on the lane (alternating wood tones), bright gold
+  arrows (were dark), red pin stripes slightly wider/brighter, white
+  shine sphere on the ball, gold trim along both gutter walls, warmer
+  ceiling light panels (amber) with gold frames. Camera framing and the
+  pink-screen fix untouched.
+
+### Voice clips (44 new, Piper en_US-ryan-medium, 77 total in Voices/)
+step_position, step_power, step_hook; quick_match, gear_shop,
+achievements_btn, more_btn; timer_on, timer_off, time_warning_10,
+time_warning_5, time_up; daily_reward, mission_done,
+achievement_unlocked; down_0..down_10; power_25, power_50, power_75,
+power_100; ball_bouncy, ball_accurate, ball_comet, ball_midnight,
+ball_thunder, ball_feather, ball_goldpro; skin_ruby, skin_ocean,
+skin_emerald, skin_violet; theme_midnight, theme_sunset, theme_emerald.
+Generated with a recreated /tmp/edgevenv (piper-tts + en_US-ryan-medium
+from HuggingFace rhasspy/piper-voices), wav -> ogg via ffmpeg
+(libvorbis q5). Old ball_light/ball_standard clips are now orphaned
+(the balls they named no longer exist); ball_heavy is still used.
+
+### Design decisions made while building (Justin's call where noted)
+- Quick Match "win" = 40+ points in 3 frames (single-player; there is
+  no opponent to beat). The 40-point bar and the achievement share it.
+- Step 1's intro clip plays only on the first ball of a game; later
+  balls speak the frame line straight away (a 3-second intro every
+  throw would drag).
+- Missions are visible on the More panel (progress + done state), not a
+  separate panel, to keep the menu count down.
+- Practice/Spare Practice award no coins (anti-farm) but still count
+  pins toward missions.
+
+### Verification done locally (no Editor, no compile)
+- Brace/paren/bracket balance clean on all 12 scripts.
+- Undefined-name sweep: 35 hits, all false positives (Unity APIs
+  Vector3.Angle/Quaternion.Euler, constructors, Action delegate calls,
+  lambda parameters).
+- Zero old Unity API names (PhysicMaterial, clearColor, .velocity,
+  .drag, angularDrag) — only the pre-existing Shader.Find fallback
+  chain inside FindGameShader, which is by design (shipped Resources
+  shader first).
+- All 44 new clips exist, valid OggS, and every clip key referenced in
+  code has a file.
+- PlayerPrefs keys all LB12_-prefixed; no collision with
+  LynxosBowlingBest.
+- Panel geometry checked by arithmetic: main menu 9 buttons end at
+  -1042, gear 13 buttons end at -1050, ball select (8 owned) ends at
+  -1022, achievements end at -878 — all inside 1080.
+
+### Watch out for on device (unverified by build)
+- VoiceBank queue: PlayOneShot replaced by clip+Play with
+  WaitForSeconds(clip.length) — if a clip's length reads as 0 on device
+  the queue could spin fast; the 0.05 s pad and isPlaying check are the
+  guard.
+- The 3-step throw is a full input-flow replacement (Aiming/Windup
+  states deleted). If OK ever feels dead in a step, check the
+  okWasReleased gating in that handler first.
+- Quick Match frame 3 uses the generalised 10th-frame scoring — the
+  first on-device check should be a strike/spare in frame 3.
