@@ -145,6 +145,50 @@ public static class BowlingConfig
         new AlleyTheme("Emerald Alley",  new Color(0.15f, 0.85f, 0.40f), 120, "theme_emerald"),
     };
 
+    // v1.3.0: wearable gear for the menu bowler — shirts, shoes and one
+    // accessory at a time. Same rules as balls/skins/themes: earned coins
+    // only, no real money. Cost 0 = starter, owned from the start.
+    public struct Wearable
+    {
+        public string Name;
+        public Color Color;
+        public int Cost;
+        public string Key;
+        public Wearable(string name, Color color, int cost, string key)
+        {
+            Name = name;
+            Color = color;
+            Cost = cost;
+            Key = key;
+        }
+    }
+
+    public static readonly Wearable[] Shirts = new Wearable[]
+    {
+        new Wearable("Classic Black", new Color(0.10f, 0.10f, 0.10f),   0, "shirt_classic"),
+        new Wearable("Gold",          new Color(0.96f, 0.77f, 0.09f),  40, "shirt_gold"),
+        new Wearable("Crimson",       new Color(0.75f, 0.10f, 0.15f),  60, "shirt_crimson"),
+        new Wearable("Royal Blue",    new Color(0.10f, 0.30f, 0.80f),  80, "shirt_blue"),
+        new Wearable("Emerald",       new Color(0.10f, 0.65f, 0.35f), 100, "shirt_emerald"),
+    };
+
+    public static readonly Wearable[] Shoes = new Wearable[]
+    {
+        new Wearable("Classic Black", new Color(0.08f, 0.08f, 0.08f),   0, "shoes_classic"),
+        new Wearable("White",         new Color(0.92f, 0.92f, 0.92f),  40, "shoes_white"),
+        new Wearable("Gold",          new Color(0.96f, 0.77f, 0.09f),  60, "shoes_gold"),
+        new Wearable("Crimson",       new Color(0.75f, 0.10f, 0.15f),  80, "shoes_crimson"),
+    };
+
+    // One accessory slot: only one can be worn at a time. Colour is the
+    // accessory's own colour (a cap is cloth, a wristband is a band).
+    public static readonly Wearable[] Accessories = new Wearable[]
+    {
+        new Wearable("Gold Headband", new Color(0.96f, 0.77f, 0.09f),  40, "acc_headband"),
+        new Wearable("Wristband",     new Color(0.85f, 0.10f, 0.15f),  60, "acc_wristband"),
+        new Wearable("Gold Cap",      new Color(0.96f, 0.77f, 0.09f),  80, "acc_cap"),
+    };
+
     public struct SpareSetup
     {
         public string Name;
@@ -187,8 +231,19 @@ public static class BowlingConfig
     // GameUnlit.shader): a shader asset in a Resources folder is always
     // included in the build, and Resources.Load finds it. The Find chain
     // stays as a fallback. Returns null when nothing is found.
+    // v1.3.0: the game ships a SECOND shader, GameLit (simple lighting
+    // + shine + shadows). It is tried FIRST — the flat GameUnlit is the
+    // fallback, so if GameLit ever fails to load the scene renders flat
+    // again instead of going pink.
     public static Shader FindGameShader()
     {
+        Shader lit = Resources.Load<Shader>("Shaders/GameLit");
+        if (lit != null)
+        {
+            Debug.Log("[BowlingConfig] Using shipped shader Lynxos/GameLit");
+            return lit;
+        }
+        Debug.LogWarning("[BowlingConfig] Shipped lit shader not found in Resources; falling back to GameUnlit.");
         Shader shipped = Resources.Load<Shader>("Shaders/GameUnlit");
         if (shipped != null)
         {

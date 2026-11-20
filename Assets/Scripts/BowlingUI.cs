@@ -30,7 +30,7 @@ public class BowlingUI : MonoBehaviour
     public System.Action OnOpenGear;
     public System.Action OnOpenAchievements;
     public System.Action OnToggleTimer;
-    public System.Action<int, int> OnGearSelected; // (kind, index): 0 ball, 1 skin, 2 theme
+    public System.Action<int, int> OnGearSelected; // (kind, index): 0 ball, 1 skin, 2 theme, 3 shirt, 4 shoe, 5 accessory
 
     // Touch controls (tablet): shown only when the device has a touchscreen.
     public System.Action OnTouchAimLeft;
@@ -93,6 +93,12 @@ public class BowlingUI : MonoBehaviour
 
     private Text gameOverTitle;
     private Text gameOverDetail;
+
+    // v1.3.0: the Gear Shop has grown (balls, colours, alleys, shirts,
+    // shoes, accessories = 24 buttons) — too many for one screen. It is
+    // now two levels: a category list, then the items in that category.
+    // -1 = showing categories.
+    private int gearCategory = -1;
 
     public void Build()
     {
@@ -200,38 +206,58 @@ public class BowlingUI : MonoBehaviour
     private void BuildMenuPanel()
     {
         menuPanel = CreatePanel("MainMenu", true);
+        // v1.3.0: the bowler stands centre-screen behind the menu, so
+        // the full-screen dim is lighter than other panels (0.30, not
+        // 0.55) and the buttons get their own darker strip on the left.
+        Image menuBg = menuPanel.GetComponent<Image>();
+        if (menuBg != null) menuBg.color = new Color(0.04f, 0.04f, 0.04f, 0.30f);
+        GameObject strip = new GameObject("MenuStrip");
+        strip.transform.SetParent(menuPanel.transform, false);
+        RectTransform srt = strip.AddComponent<RectTransform>();
+        srt.anchorMin = new Vector2(0f, 0f);
+        srt.anchorMax = new Vector2(0f, 1f);
+        srt.offsetMin = Vector2.zero;
+        srt.offsetMax = new Vector2(860f, 0f);
+        Image stripImg = strip.AddComponent<Image>();
+        stripImg.color = new Color(0.04f, 0.04f, 0.04f, 0.55f);
+        stripImg.raycastTarget = false;
+
+        // v1.3.0: title, subtitle and score line move to the left, over
+        // the button strip, so the bowler owns the centre of the screen.
         CreateText(menuPanel, "LYNXOS BOWLING", 72, BowlingConfig.Gold,
-            new Vector2(0.5f, 1f), new Vector2(0f, -70f), new Vector2(1400f, 100f), TextAnchor.MiddleCenter);
+            new Vector2(0f, 1f), new Vector2(60f, -70f), new Vector2(1100f, 100f), TextAnchor.MiddleLeft);
         CreateText(menuPanel, "Real 3D bowling", 30, Color.white,
-            new Vector2(0.5f, 1f), new Vector2(0f, -160f), new Vector2(1200f, 50f), TextAnchor.MiddleCenter);
+            new Vector2(0f, 1f), new Vector2(60f, -160f), new Vector2(1100f, 50f), TextAnchor.MiddleLeft);
 
         // v1.2.0: nine buttons, so they are shorter and tighter than the
         // old seven. Best score and coins share one line above them.
+        // v1.3.0: the buttons live on the LEFT side (x = -560), so the
+        // bowler stands front and centre.
         menuBest = CreateText(menuPanel, "Best score: 0   •   Coins: 0", 30, BowlingConfig.Gold,
-            new Vector2(0.5f, 1f), new Vector2(0f, -215f), new Vector2(1200f, 50f), TextAnchor.MiddleCenter);
+            new Vector2(0f, 1f), new Vector2(60f, -215f), new Vector2(1100f, 50f), TextAnchor.MiddleLeft);
         float y = -300f;
-        menuButtons.Add(CreateButton(menuPanel, "Full Game", y, 760f, 76f, () => { if (OnFullGame != null) OnFullGame(); }, "full_game"));
+        menuButtons.Add(CreateButton(menuPanel, "Full Game", y, 760f, 76f, () => { if (OnFullGame != null) OnFullGame(); }, "full_game", 34, -560f));
         y -= 88f;
-        menuButtons.Add(CreateButton(menuPanel, "Quick Match", y, 760f, 76f, () => { if (OnQuickMatch != null) OnQuickMatch(); }, "quick_match"));
+        menuButtons.Add(CreateButton(menuPanel, "Quick Match", y, 760f, 76f, () => { if (OnQuickMatch != null) OnQuickMatch(); }, "quick_match", 34, -560f));
         y -= 88f;
-        menuButtons.Add(CreateButton(menuPanel, "Practice", y, 760f, 76f, () => { if (OnPractice != null) OnPractice(); }, "practice"));
+        menuButtons.Add(CreateButton(menuPanel, "Practice", y, 760f, 76f, () => { if (OnPractice != null) OnPractice(); }, "practice", 34, -560f));
         y -= 88f;
-        menuButtons.Add(CreateButton(menuPanel, "Spare Practice", y, 760f, 76f, () => { if (OnSparePracticeMenu != null) OnSparePracticeMenu(); }, "spare_practice"));
+        menuButtons.Add(CreateButton(menuPanel, "Spare Practice", y, 760f, 76f, () => { if (OnSparePracticeMenu != null) OnSparePracticeMenu(); }, "spare_practice", 34, -560f));
         y -= 88f;
-        menuButtons.Add(CreateButton(menuPanel, "2 Players", y, 760f, 76f, () => { if (OnTwoPlayers != null) OnTwoPlayers(); }, "two_players"));
+        menuButtons.Add(CreateButton(menuPanel, "2 Players", y, 760f, 76f, () => { if (OnTwoPlayers != null) OnTwoPlayers(); }, "two_players", 34, -560f));
         y -= 88f;
-        ballButton = CreateButton(menuPanel, "Ball: Heavy 16 lb", y, 760f, 76f, () => { if (OnOpenBallSelect != null) OnOpenBallSelect(); }, "ball_select");
+        ballButton = CreateButton(menuPanel, "Ball: Heavy 16 lb", y, 760f, 76f, () => { if (OnOpenBallSelect != null) OnOpenBallSelect(); }, "ball_select", 34, -560f);
         menuButtons.Add(ballButton);
         y -= 88f;
-        bumpersButton = CreateButton(menuPanel, "Bumpers: Off", y, 760f, 76f, () => { if (OnToggleBumpers != null) OnToggleBumpers(); }, "bumpers_off");
+        bumpersButton = CreateButton(menuPanel, "Bumpers: Off", y, 760f, 76f, () => { if (OnToggleBumpers != null) OnToggleBumpers(); }, "bumpers_off", 34, -560f);
         menuButtons.Add(bumpersButton);
         bumpersSpeaker = bumpersButton.GetComponent<ButtonSpeaker>();
         y -= 88f;
-        voiceButton = CreateButton(menuPanel, "Voice: On", y, 760f, 76f, () => { if (OnToggleVoice != null) OnToggleVoice(); }, "voice_on");
+        voiceButton = CreateButton(menuPanel, "Voice: On", y, 760f, 76f, () => { if (OnToggleVoice != null) OnToggleVoice(); }, "voice_on", 34, -560f);
         menuButtons.Add(voiceButton);
         voiceSpeaker = voiceButton.GetComponent<ButtonSpeaker>();
         y -= 88f;
-        menuButtons.Add(CreateButton(menuPanel, "More", y, 760f, 76f, () => { if (OnOpenMore != null) OnOpenMore(); }, "more_btn"));
+        menuButtons.Add(CreateButton(menuPanel, "More", y, 760f, 76f, () => { if (OnOpenMore != null) OnOpenMore(); }, "more_btn", 34, -560f));
         WireVertical(menuButtons);
     }
 
@@ -354,41 +380,134 @@ public class BowlingUI : MonoBehaviour
         }
         gearButtons.Clear();
         if (gearCoins != null) gearCoins.text = "Coins: " + GameProgression.Coins;
-        float y = -250f;
-        for (int i = 0; i < BowlingConfig.Balls.Length; i++)
+
+        // v1.3.0: two levels. At the top level the shop lists its six
+        // categories; inside a category it lists that category's items.
+        // One screen never holds more than 7 buttons, so everything
+        // fits on a 1080 screen.
+        if (gearCategory < 0)
         {
-            if (BowlingConfig.Balls[i].Cost <= 0) continue; // starters are not sold here
-            int index = i;
-            string state = GameProgression.OwnsBall(i)
-                ? (i == GameProgression.EquippedBall ? " — Equipped" : " — Owned")
-                : " — " + BowlingConfig.Balls[i].Cost + " coins";
-            gearButtons.Add(CreateButton(gearPanel, "Ball: " + BowlingConfig.Balls[i].Name + state, y, 900f, 56f,
-                () => { if (OnGearSelected != null) OnGearSelected(0, index); }, BowlingConfig.BallKeys[i], 26));
-            y -= 64f;
+            float y = -250f;
+            string[] cats = new string[] { "Balls", "Ball Colours", "Alley Looks", "Shirts", "Shoes", "Accessories" };
+            string[] catKeys = new string[] { "ball_select", "skin_ruby", "theme_midnight", "shirt_classic", "shoes_classic", "acc_headband" };
+            for (int i = 0; i < cats.Length; i++)
+            {
+                int index = i;
+                gearButtons.Add(CreateButton(gearPanel, cats[i], y, 900f, 76f,
+                    () => { gearCategory = index; RebuildGearButtons(); SelectFirstGear(); }, catKeys[i], 30));
+                y -= 88f;
+            }
+            gearButtons.Add(CreateButton(gearPanel, "Back", y, 760f, 76f,
+                () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back", 30));
+            WireVertical(gearButtons);
+            return;
         }
-        for (int i = 0; i < BowlingConfig.Skins.Length; i++)
+
+        float iy = -250f;
+        if (gearCategory == 0)
         {
-            int index = i;
-            string state = GameProgression.OwnsSkin(i)
-                ? (i == GameProgression.EquippedSkin ? " — Equipped" : " — Owned")
-                : " — " + BowlingConfig.Skins[i].Cost + " coins";
-            gearButtons.Add(CreateButton(gearPanel, "Colour: " + BowlingConfig.Skins[i].Name + state, y, 900f, 56f,
-                () => { if (OnGearSelected != null) OnGearSelected(1, index); }, BowlingConfig.Skins[i].Key, 26));
-            y -= 64f;
+            for (int i = 0; i < BowlingConfig.Balls.Length; i++)
+            {
+                if (BowlingConfig.Balls[i].Cost <= 0) continue; // starters are not sold here
+                int index = i;
+                string state = GameProgression.OwnsBall(i)
+                    ? (i == GameProgression.EquippedBall ? " — Equipped" : " — Owned")
+                    : " — " + BowlingConfig.Balls[i].Cost + " coins";
+                gearButtons.Add(CreateButton(gearPanel, "Ball: " + BowlingConfig.Balls[i].Name + state, iy, 900f, 56f,
+                    () => { if (OnGearSelected != null) OnGearSelected(0, index); }, BowlingConfig.BallKeys[i], 26));
+                iy -= 64f;
+            }
         }
-        for (int i = 0; i < BowlingConfig.Themes.Length; i++)
+        else if (gearCategory == 1)
         {
-            int index = i;
-            string state = GameProgression.OwnsTheme(i)
-                ? (i == GameProgression.EquippedTheme ? " — Equipped" : " — Owned")
-                : " — " + BowlingConfig.Themes[i].Cost + " coins";
-            gearButtons.Add(CreateButton(gearPanel, "Alley: " + BowlingConfig.Themes[i].Name + state, y, 900f, 56f,
-                () => { if (OnGearSelected != null) OnGearSelected(2, index); }, BowlingConfig.Themes[i].Key, 26));
-            y -= 64f;
+            for (int i = 0; i < BowlingConfig.Skins.Length; i++)
+            {
+                int index = i;
+                string state = GameProgression.OwnsSkin(i)
+                    ? (i == GameProgression.EquippedSkin ? " — Equipped" : " — Owned")
+                    : " — " + BowlingConfig.Skins[i].Cost + " coins";
+                gearButtons.Add(CreateButton(gearPanel, "Colour: " + BowlingConfig.Skins[i].Name + state, iy, 900f, 56f,
+                    () => { if (OnGearSelected != null) OnGearSelected(1, index); }, BowlingConfig.Skins[i].Key, 26));
+                iy -= 64f;
+            }
         }
-        gearButtons.Add(CreateButton(gearPanel, "Back", y, 760f, 64f,
-            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back", 28));
+        else if (gearCategory == 2)
+        {
+            for (int i = 0; i < BowlingConfig.Themes.Length; i++)
+            {
+                int index = i;
+                string state = GameProgression.OwnsTheme(i)
+                    ? (i == GameProgression.EquippedTheme ? " — Equipped" : " — Owned")
+                    : " — " + BowlingConfig.Themes[i].Cost + " coins";
+                gearButtons.Add(CreateButton(gearPanel, "Alley: " + BowlingConfig.Themes[i].Name + state, iy, 900f, 56f,
+                    () => { if (OnGearSelected != null) OnGearSelected(2, index); }, BowlingConfig.Themes[i].Key, 26));
+                iy -= 64f;
+            }
+        }
+        else if (gearCategory == 3)
+        {
+            for (int i = 0; i < BowlingConfig.Shirts.Length; i++)
+            {
+                int index = i;
+                string state = GameProgression.OwnsShirt(i)
+                    ? (i == GameProgression.EquippedShirt ? " — Equipped" : " — Owned")
+                    : " — " + BowlingConfig.Shirts[i].Cost + " coins";
+                gearButtons.Add(CreateButton(gearPanel, "Shirt: " + BowlingConfig.Shirts[i].Name + state, iy, 900f, 56f,
+                    () => { if (OnGearSelected != null) OnGearSelected(3, index); }, BowlingConfig.Shirts[i].Key, 26));
+                iy -= 64f;
+            }
+        }
+        else if (gearCategory == 4)
+        {
+            for (int i = 0; i < BowlingConfig.Shoes.Length; i++)
+            {
+                int index = i;
+                string state = GameProgression.OwnsShoe(i)
+                    ? (i == GameProgression.EquippedShoe ? " — Equipped" : " — Owned")
+                    : " — " + BowlingConfig.Shoes[i].Cost + " coins";
+                gearButtons.Add(CreateButton(gearPanel, "Shoes: " + BowlingConfig.Shoes[i].Name + state, iy, 900f, 56f,
+                    () => { if (OnGearSelected != null) OnGearSelected(4, index); }, BowlingConfig.Shoes[i].Key, 26));
+                iy -= 64f;
+            }
+        }
+        else if (gearCategory == 5)
+        {
+            for (int i = 0; i < BowlingConfig.Accessories.Length; i++)
+            {
+                int index = i;
+                string state = GameProgression.OwnsAccessory(i)
+                    ? (i == GameProgression.EquippedAccessory ? " — Equipped" : " — Owned")
+                    : " — " + BowlingConfig.Accessories[i].Cost + " coins";
+                gearButtons.Add(CreateButton(gearPanel, "Accessory: " + BowlingConfig.Accessories[i].Name + state, iy, 900f, 56f,
+                    () => { if (OnGearSelected != null) OnGearSelected(5, index); }, BowlingConfig.Accessories[i].Key, 26));
+                iy -= 64f;
+            }
+        }
+        gearButtons.Add(CreateButton(gearPanel, "Back", iy, 760f, 64f,
+            () => { GearBack(); }, "back", 28));
         WireVertical(gearButtons);
+    }
+
+    // Back inside a gear category returns to the category list; Back at
+    // the top level leaves the shop for the main menu.
+    private void GearBack()
+    {
+        if (gearCategory >= 0)
+        {
+            gearCategory = -1;
+            RebuildGearButtons();
+            SelectFirstGear();
+        }
+        else if (OnQuitToMenu != null)
+        {
+            OnQuitToMenu();
+        }
+    }
+
+    private void SelectFirstGear()
+    {
+        if (gearButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(gearButtons[0].gameObject);
     }
 
     private void BuildAchPanel()
@@ -460,18 +579,35 @@ public class BowlingUI : MonoBehaviour
         }
 
         // Big spoken-line mirror at the bottom, above the power bar.
+        // v1.3.0: moved up to clear the taller power meter.
         hudLine = CreateText(hudPanel, "", 40, BowlingConfig.Gold,
-            new Vector2(0.5f, 0f), new Vector2(0f, 150f), new Vector2(1700f, 60f), TextAnchor.MiddleCenter);
+            new Vector2(0.5f, 0f), new Vector2(0f, 215f), new Vector2(1700f, 60f), TextAnchor.MiddleCenter);
+
+        // v1.3.0: the power meter is rebuilt big and unmissable. The old
+        // one (900x36, dark grey, no border) read as missing on the TV.
+        // The bar is now 1200x90 with a bright gold border, the fill
+        // changes colour as it climbs (green -> gold -> red), and a big
+        // percent number sits beside it. It fills through the whole
+        // power step, from the moment OK is held to the moment it locks.
+        GameObject barBorder = new GameObject("PowerBarBorder");
+        barBorder.transform.SetParent(hudPanel.transform, false);
+        RectTransform borderRt = barBorder.AddComponent<RectTransform>();
+        borderRt.anchorMin = new Vector2(0.5f, 0f);
+        borderRt.anchorMax = new Vector2(0.5f, 0f);
+        borderRt.anchoredPosition = new Vector2(0f, 100f);
+        borderRt.sizeDelta = new Vector2(1224f, 114f);
+        Image borderImg = barBorder.AddComponent<Image>();
+        borderImg.color = BowlingConfig.Gold;
 
         GameObject barBg = new GameObject("PowerBarBg");
-        barBg.transform.SetParent(hudPanel.transform, false);
+        barBg.transform.SetParent(barBorder.transform, false);
         RectTransform barRt = barBg.AddComponent<RectTransform>();
-        barRt.anchorMin = new Vector2(0.5f, 0f);
-        barRt.anchorMax = new Vector2(0.5f, 0f);
-        barRt.anchoredPosition = new Vector2(0f, 92f);
-        barRt.sizeDelta = new Vector2(900f, 36f);
+        barRt.anchorMin = new Vector2(0.5f, 0.5f);
+        barRt.anchorMax = new Vector2(0.5f, 0.5f);
+        barRt.anchoredPosition = Vector2.zero;
+        barRt.sizeDelta = new Vector2(1200f, 90f);
         Image barBgImg = barBg.AddComponent<Image>();
-        barBgImg.color = new Color(0.2f, 0.2f, 0.2f);
+        barBgImg.color = new Color(0.08f, 0.08f, 0.08f);
 
         GameObject fillObj = new GameObject("PowerBarFill");
         fillObj.transform.SetParent(barBg.transform, false);
@@ -487,8 +623,8 @@ public class BowlingUI : MonoBehaviour
         powerFill.fillAmount = 0f;
         powerFill.color = BowlingConfig.Gold;
 
-        hudPower = CreateText(hudPanel, "", 30, Color.white,
-            new Vector2(0.5f, 0f), new Vector2(0f, 42f), new Vector2(400f, 40f), TextAnchor.MiddleCenter);
+        hudPower = CreateText(hudPanel, "", 48, BowlingConfig.Gold,
+            new Vector2(0.5f, 0f), new Vector2(640f, 100f), new Vector2(280f, 90f), TextAnchor.MiddleLeft);
     }
 
     // Touch controls for tablet play: aim + hook buttons and a big hold
@@ -652,14 +788,16 @@ public class BowlingUI : MonoBehaviour
     }
 
     private Button CreateButton(GameObject parent, string label, float y, float width, float height,
-        System.Action onClick, string speakKey, int fontSize = 34)
+        System.Action onClick, string speakKey, int fontSize = 34, float x = 0f)
     {
         GameObject go = new GameObject("Btn_" + label);
         go.transform.SetParent(parent.transform, false);
         RectTransform rt = go.AddComponent<RectTransform>();
         rt.anchorMin = new Vector2(0.5f, 1f);
         rt.anchorMax = new Vector2(0.5f, 1f);
-        rt.anchoredPosition = new Vector2(0f, y);
+        // v1.3.0: x lets the menu buttons sit on the left side (x = -560)
+        // instead of centred, so the bowler owns the middle of the screen.
+        rt.anchoredPosition = new Vector2(x, y);
         rt.sizeDelta = new Vector2(width, height);
         Image img = go.AddComponent<Image>();
         img.color = new Color(0.28f, 0.28f, 0.28f);
@@ -798,6 +936,7 @@ public class BowlingUI : MonoBehaviour
 
     public void ShowGear()
     {
+        gearCategory = -1; // v1.3.0: the shop always opens at the categories
         RebuildGearButtons();
         SetOnly(gearPanel);
         if (gearButtons.Count > 0 && EventSystem.current != null)
@@ -840,8 +979,16 @@ public class BowlingUI : MonoBehaviour
         if (hudScore != null) hudScore.text = "Score " + score;
         if (hudPins != null) hudPins.text = "Pins standing: " + pinsStanding;
         if (hudLine != null) hudLine.text = line;
-        if (powerFill != null) powerFill.fillAmount = power01;
-        if (hudPower != null) hudPower.text = showPower ? "Power " + Mathf.RoundToInt(power01 * 100f) : "";
+        if (powerFill != null)
+        {
+            powerFill.fillAmount = power01;
+            // v1.3.0: the fill changes colour as it climbs — green, then
+            // gold, then red-orange at full power.
+            powerFill.color = power01 < 0.5f ? new Color(0.20f, 0.80f, 0.25f)
+                : power01 < 0.75f ? BowlingConfig.Gold
+                : new Color(1f, 0.30f, 0.08f);
+        }
+        if (hudPower != null) hudPower.text = showPower ? Mathf.RoundToInt(power01 * 100f) + "%" : "";
     }
 
     public void UpdateScoreboard(BowlingScore score, int currentFrame, int totalFrames)

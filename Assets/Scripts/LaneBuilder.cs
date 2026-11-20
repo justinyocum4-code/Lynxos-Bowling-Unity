@@ -66,14 +66,19 @@ public class LaneBuilder : MonoBehaviour
 
     private void CreateMaterials()
     {
-        laneMat = MakeMaterial(new Color(0.55f, 0.38f, 0.18f), 0.4f); // wood
+        // v1.3.0: the lane is much darker now, so the gold ball stands out
+        // against it instead of blending in (v1.2.0: wood 0.55/0.38/0.18,
+        // boards 0.62/0.48 — nearly the same gold-brown as the ball).
+        laneMat = MakeMaterial(new Color(0.32f, 0.21f, 0.09f), 0.4f); // dark wood
         gutterMat = MakeMaterial(new Color(0.08f, 0.08f, 0.08f), 0.2f);
         wallMat = MakeMaterial(new Color(0.05f, 0.05f, 0.06f), 0.2f);
         goldMat = MakeMaterial(GameProgression.AccentColor(), 0.6f);
         darkDotMat = MakeMaterial(new Color(0.15f, 0.1f, 0.05f), 0.3f);
-        arrowMat = MakeMaterial(new Color(0.95f, 0.85f, 0.45f), 0.4f); // bright gold arrows
-        boardLightMat = MakeMaterial(new Color(0.62f, 0.45f, 0.22f), 0.4f);
-        boardDarkMat = MakeMaterial(new Color(0.48f, 0.32f, 0.15f), 0.4f);
+        // v1.3.0: arrows toned down from bright gold (0.95, 0.85, 0.45) to
+        // muted amber — the old arrows matched the ball exactly.
+        arrowMat = MakeMaterial(new Color(0.55f, 0.42f, 0.15f), 0.4f);
+        boardLightMat = MakeMaterial(new Color(0.40f, 0.28f, 0.13f), 0.4f);
+        boardDarkMat = MakeMaterial(new Color(0.26f, 0.17f, 0.08f), 0.4f);
     }
 
     // v1.1.4: shader via BowlingConfig.FindGameShader (pipeline-aware).
@@ -95,7 +100,9 @@ public class LaneBuilder : MonoBehaviour
             }
             Material mat = new Material(shader);
             mat.color = color;
-            if (shader.name.Contains("Universal Render Pipeline"))
+            // v1.3.0: GameLit takes _Smoothness like a URP shader (it
+            // also accepts _Glossiness, so either path works).
+            if (shader.name.Contains("Universal Render Pipeline") || shader.name.Contains("GameLit"))
             {
                 mat.SetFloat("_Smoothness", smoothness);
             }
@@ -264,7 +271,7 @@ public class LaneBuilder : MonoBehaviour
         Material floorMat = MakeMaterial(new Color(0.10f, 0.08f, 0.06f), 0.15f);
         Material woodMat = MakeMaterial(new Color(0.22f, 0.14f, 0.07f), 0.35f);
         Material ceilMat = MakeMaterial(new Color(0.06f, 0.06f, 0.07f), 0.1f);
-        Material neighMat = MakeMaterial(new Color(0.35f, 0.24f, 0.12f), 0.35f);
+        Material neighMat = MakeMaterial(new Color(0.24f, 0.16f, 0.08f), 0.35f);
         // v1.2.0: warmer light panels (more amber, less cold white).
         Material panelMat = MakeMaterial(new Color(1f, 0.88f, 0.62f), 0.1f);
 
@@ -300,6 +307,7 @@ public class LaneBuilder : MonoBehaviour
         }
 
         // Neighbouring lanes, one each side, slightly darker wood.
+        // v1.3.0: darkened to match the darker main lane.
         for (int s = -1; s <= 1; s += 2)
         {
             CreateBox("NeighbourLane" + (s < 0 ? "L" : "R"),
@@ -319,6 +327,84 @@ public class LaneBuilder : MonoBehaviour
         Object.Destroy(spare.GetComponent<Collider>());
     }
 
+    // v1.3.0: the camera is exposed so the manager can move it. Modes:
+    // Aim (static, behind the ball), Follow (chases the ball down the
+    // lane during the roll), Return (glides back to Aim after the pins
+    // are counted). The follow never lets the camera pass the pin deck
+    // (z clamped to 15.5; head pin is at 18.3, mask at ~20.1).
+    public Camera MainCamera { get; private set; }
+
+    private enum CamMode { Aim, Follow, Return }
+    private CamMode camMode = CamMode.Aim;
+    private Vector3 followTargetPos;
+    private Vector3 followTargetLook;
+
+    // v1.3.0: aim framing nudged slightly closer than v1.1.3
+    // (0, 1.7, -4.6 looking at (0, 0.4, 12)): the ball is 62 px tall
+    // instead of 56 and still safely in frame. A much closer static
+    // camera is NOT safe — at (0, 1.1, -2.6) the ball sits 22.1 deg off
+    // centre, 5 deg from the bottom edge, and the HUD could cover it.
+    private readonly Vector3 aimCamPos = new Vector3(0f, 1.6f, -4.2f);
+    private readonly Vector3 aimCamLook = new Vector3(0f, 0.4f, 11f);
+
+    private const float FollowBehind = 2.8f;  // metres behind the ball
+    private const float FollowAbove = 1.0f;   // metres above the ball
+    private const float FollowLookAhead = 6f; // metres ahead of the ball
+    private const float FollowMaxZ = 15.5f;   // camera never passes this
+
+    // Called by the manager when a ball is thrown: the camera starts
+    // chasing. The manager must call UpdateFollow(ballPos) every frame
+    // while rolling.
+    public void StartFollow()
+    {
+        camMode = CamMode.Follow;
+    }
+
+    public void UpdateFollow(Vector3 ballPos)
+    {
+        float camZ = Mathf.Min(ballPos.z - FollowBehind, FollowMaxZ);
+        followTargetPos = new Vector3(ballPos.x, ballPos.y + FollowAbove, camZ);
+        followTargetLook = new Vector3(ballPos.x, ballPos.y + 0.1f,
+            Mathf.Min(ballPos.z + FollowLookAhead, BowlingConfig.HeadPinZ));
+    }
+
+    // Called by the manager once the pins are counted: glide home.
+    public void ReturnToAim()
+    {
+        camMode = CamMode.Return;
+    }
+
+    private void Update()
+    {
+        if (MainCamera == null) return;
+        if (camMode == CamMode.Follow)
+        {
+            MoveCameraToward(followTargetPos, followTargetLook, 8f);
+        }
+        else if (camMode == CamMode.Return)
+        {
+            MoveCameraToward(aimCamPos, aimCamLook, 4f);
+            if (Vector3.Distance(MainCamera.transform.position, aimCamPos) < 0.05f)
+            {
+                camMode = CamMode.Aim;
+                MainCamera.transform.position = aimCamPos;
+                MainCamera.transform.LookAt(aimCamLook);
+            }
+        }
+    }
+
+    // Frame-rate independent smoothing (never snaps): position lerps and
+    // the view direction slerps toward the target, so the follow feels
+    // like a camera gliding, not a cut.
+    private void MoveCameraToward(Vector3 pos, Vector3 look, float rate)
+    {
+        float t = 1f - Mathf.Exp(-rate * Time.deltaTime);
+        MainCamera.transform.position = Vector3.Lerp(MainCamera.transform.position, pos, t);
+        Vector3 wantDir = (look - MainCamera.transform.position).normalized;
+        Vector3 dir = Vector3.Slerp(MainCamera.transform.forward, wantDir, t).normalized;
+        MainCamera.transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
+    }
+
     private void BuildLightsAndCamera()
     {
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
@@ -330,6 +416,16 @@ public class LaneBuilder : MonoBehaviour
         dir.intensity = 1.1f;
         dir.color = new Color(1f, 0.95f, 0.85f);
         sun.transform.rotation = Quaternion.Euler(50f, -25f, 0f);
+        // v1.3.0: real-time shadows on (soft). The GameLit shader reads
+        // them; the flat GameUnlit fallback ignores them. NOTE: shadows
+        // also need the URP renderer asset to have shadow support on —
+        // that file lives in the GitHub repo, not this local copy, so it
+        // must be confirmed there before building. With shadows off in
+        // the renderer, this setting is silently ignored and the scene
+        // simply renders lit without shadows.
+        dir.shadows = LightShadows.Soft;
+        dir.shadowBias = 0.05f;
+        dir.shadowNormalBias = 0.02f;
 
         // Soft light over the pins so they read clearly from the camera.
         GameObject pinLight = new GameObject("PinLight");
@@ -351,6 +447,7 @@ public class LaneBuilder : MonoBehaviour
 
         GameObject camObj = new GameObject("Main Camera");
         Camera cam = camObj.AddComponent<Camera>();
+        MainCamera = cam;
         // v1.1.4: Solid Color, never Skybox — the template scene is
         // destroyed at load, so there is no skybox to render.
         cam.clearFlags = CameraClearFlags.SolidColor;
@@ -358,13 +455,13 @@ public class LaneBuilder : MonoBehaviour
         cam.fieldOfView = 55f;
         cam.nearClipPlane = 0.1f;
         cam.farClipPlane = 100f;
-        // v1.1.3 framing: pulled back and lower than v1.1 (0, 2.8, -3.6).
-        // The old framing put the ball 32.9 deg off the view centre against
-        // a 27.5 deg half-FOV, so the ball sat below the bottom edge of the
-        // screen and was never visible. This framing puts the ball ~17 deg
-        // off centre with the pins near the centre — verified numerically.
-        camObj.transform.position = new Vector3(0f, 1.7f, -4.6f);
-        camObj.transform.LookAt(new Vector3(0f, 0.4f, 12f));
+        // v1.3.0 aim framing (see aimCamPos/aimCamLook above): nudged
+        // slightly closer than v1.1.3's (0, 1.7, -4.6) looking at
+        // (0, 0.4, 12). The old framing put the ball 32.9 deg off the
+        // view centre against a 27.5 deg half-FOV in v1.1, so the ball
+        // sat below the bottom edge and was never visible.
+        camObj.transform.position = aimCamPos;
+        camObj.transform.LookAt(aimCamLook);
         // The listener is what lets Unity play ANY sound. v1.1–v1.1.2 had
         // none: GameBootstrap destroys the template scene (whose camera
         // carried the listener) and the rebuilt camera never added one, so

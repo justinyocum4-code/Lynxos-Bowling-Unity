@@ -23,6 +23,7 @@ public class BowlingGameManager : MonoBehaviour
     private LaneBuilder lane;
     private PinManager pins;
     private BallController ball;
+    private BowlerCharacter bowler; // v1.3.0: the menu bowler
     private BowlingUI ui;
     private SoundSynth sound;
     private VoiceBank voiceBank;
@@ -66,6 +67,8 @@ public class BowlingGameManager : MonoBehaviour
     private bool gameHadGutter;
     private bool dailyClaimed;
     private bool firstBallOfGame;
+    private bool hintSpokenThisSession; // v1.3.0: aim_help plays once per session
+    private float slowMoTimer; // v1.3.0: pin-hit slow motion countdown (real seconds)
 
     // Frames in the current match: 3 for a Quick Match, 10 otherwise.
     private int TotalFrames
@@ -104,6 +107,13 @@ public class BowlingGameManager : MonoBehaviour
         ball = ballObj.AddComponent<BallController>();
         TryBuild("Ball", () => ball.Build());
         if (ball != null) ball.OnPinHit += OnBallHitPin;
+
+        // v1.3.0: the menu bowler (hidden until the main menu shows).
+        GameObject bowlerObj = new GameObject("Bowler");
+        bowlerObj.transform.SetParent(transform, false);
+        bowler = bowlerObj.AddComponent<BowlerCharacter>();
+        TryBuild("Bowler", () => bowler.Build());
+        if (bowler != null) bowler.SetVisible(false);
 
         GameObject soundObj = new GameObject("Sound");
         soundObj.transform.SetParent(transform, false);
@@ -266,7 +276,9 @@ public class BowlingGameManager : MonoBehaviour
     }
 
     // --- Gear Shop ---
-
+    // kind: 0 ball, 1 skin, 2 theme, 3 shirt, 4 shoe, 5 accessory (v1.3.0).
+    // Buying also equips (except an already-worn accessory, which is
+    // taken off). A failed buy (not enough coins) only speaks the balance.
     private void HandleGearSelected(int kind, int index)
     {
         if (kind == 0)
@@ -300,7 +312,7 @@ public class BowlingGameManager : MonoBehaviour
                 Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
             }
         }
-        else
+        else if (kind == 2)
         {
             bool owned = GameProgression.OwnsTheme(index);
             if (GameProgression.BuyTheme(index))
@@ -315,6 +327,54 @@ public class BowlingGameManager : MonoBehaviour
                 Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
             }
         }
+        else if (kind == 3)
+        {
+            bool owned = GameProgression.OwnsShirt(index);
+            if (GameProgression.BuyShirt(index))
+            {
+                Narration.Speak(owned
+                    ? BowlingConfig.Shirts[index].Name + " shirt equipped."
+                    : BowlingConfig.Shirts[index].Name + " shirt unlocked!");
+            }
+            else
+            {
+                Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
+            }
+        }
+        else if (kind == 4)
+        {
+            bool owned = GameProgression.OwnsShoe(index);
+            if (GameProgression.BuyShoe(index))
+            {
+                Narration.Speak(owned
+                    ? BowlingConfig.Shoes[index].Name + " shoes equipped."
+                    : BowlingConfig.Shoes[index].Name + " shoes unlocked!");
+            }
+            else
+            {
+                Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
+            }
+        }
+        else if (kind == 5)
+        {
+            bool owned = GameProgression.OwnsAccessory(index);
+            if (GameProgression.BuyAccessory(index))
+            {
+                // Re-tapping the worn accessory takes it off.
+                bool nowWorn = GameProgression.EquippedAccessory == index;
+                Narration.Speak(!owned
+                    ? BowlingConfig.Accessories[index].Name + " unlocked!"
+                    : nowWorn
+                        ? BowlingConfig.Accessories[index].Name + " equipped."
+                        : BowlingConfig.Accessories[index].Name + " removed.");
+            }
+            else
+            {
+                Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
+            }
+        }
+        // The makeover shows on the menu bowler at once.
+        if (bowler != null) bowler.ApplyGear();
         ui.ShowGear();
     }
 
@@ -323,6 +383,11 @@ public class BowlingGameManager : MonoBehaviour
     private void StartGame(BowlingMode newMode)
     {
         mode = newMode;
+        // Safety net: a slow-motion window must never survive into a new
+        // game (or a menu) — normal speed, always.
+        Time.timeScale = 1f;
+        slowMoTimer = 0f;
+        if (bowler != null) bowler.SetVisible(false);
         int frames = newMode == BowlingMode.QuickMatch ? 3 : 10;
         scores[0].Reset();
         scores[1].Reset();
@@ -404,6 +469,17 @@ public class BowlingGameManager : MonoBehaviour
         if (firstBallOfGame)
         {
             firstBallOfGame = false;
+            // v1.3.0: the controls hint plays once, on the first ball of
+            // the first game of the session. The clip was re-recorded for
+            // the 3-step throw — the v1.1.4 wording taught the old
+            // controls (Up/Down for hook), which no longer exist. It
+            // queues ahead of the step-1 clip; play is never blocked by
+            // speech, so the player can throw while it is still talking.
+            if (!hintSpokenThisSession)
+            {
+                hintSpokenThisSession = true;
+                if (voiceBank != null) voiceBank.Play("aim_help");
+            }
             SpeakClipThenTTS("step_position",
                 "Step 1. Position. Left and right to move, OK to lock it in.", line);
         }
@@ -417,7 +493,17 @@ public class BowlingGameManager : MonoBehaviour
     private void ShowMainMenu()
     {
         state = GameState.Menu;
+        Time.timeScale = 1f;
+        slowMoTimer = 0f;
         if (sound != null) sound.StopRoll();
+        // v1.3.0: the camera glides back to the aim framing, and the
+        // bowler comes out for the menu (with the makeover applied).
+        if (lane != null) lane.ReturnToAim();
+        if (bowler != null)
+        {
+            bowler.ApplyGear();
+            bowler.SetVisible(true);
+        }
         ui.ShowMainMenu(bestScore, CurrentBallName(), bumpersOn, voiceOn);
         Narration.SpeakUIKey("main_menu", "Lynxos Bowling. Main menu.");
         // Daily reward, once per session (and once per day in PlayerPrefs).
@@ -437,6 +523,9 @@ public class BowlingGameManager : MonoBehaviour
     private void GameOver()
     {
         state = GameState.GameOver;
+        Time.timeScale = 1f;
+        slowMoTimer = 0f;
+        if (bowler != null) bowler.SetVisible(false);
         if (sound != null) sound.StopRoll();
         bool quick = mode == BowlingMode.QuickMatch;
         int s0 = scores[0].Total();
@@ -448,6 +537,15 @@ public class BowlingGameManager : MonoBehaviour
             detail = "Player 1: " + s0 + "\nPlayer 2: " + s1 + "\n" + winner;
             Narration.SpeakKey("game_over", "Game over. Player 1 scored " + s0 + ". Player 2 scored " + s1 + ". " + winner);
             foreach (string m in GameProgression.NoteGamePlayed()) AnnounceMission(m);
+            // v1.3.0: two-player games earn the same completion bonus and
+            // achievements as solo games (they used to earn nothing for
+            // finishing). Century checks the better of the two scores.
+            GameProgression.AddCoins(20);
+            int best = Mathf.Max(s0, s1);
+            if (best >= 100) GameProgression.UnlockAchievement("century");
+            if (!gameHadGutter) GameProgression.UnlockAchievement("clean_game");
+            if (gamePinsTotal >= 50) GameProgression.UnlockAchievement("fifty_frame");
+            if (GameProgression.GamesPlayed >= 10) GameProgression.UnlockAchievement("ten_games");
             DrainAchievements();
         }
         else
@@ -511,6 +609,14 @@ public class BowlingGameManager : MonoBehaviour
     {
         if (inputLockout > 0f) inputLockout -= Time.deltaTime;
 
+        // v1.3.0: slow motion runs on real time, so it always ends —
+        // even if the game state changes mid-slow-mo.
+        if (slowMoTimer > 0f)
+        {
+            slowMoTimer -= Time.unscaledDeltaTime;
+            if (slowMoTimer <= 0f) Time.timeScale = 1f;
+        }
+
         // Android TTS init is async: if it failed, say so on screen once
         // the game has settled, instead of staying silent about the voice.
         if (!ttsErrorReported && Time.time > 2.5f)
@@ -535,6 +641,8 @@ public class BowlingGameManager : MonoBehaviour
                 HandleStepHook();
                 break;
             case GameState.Rolling:
+                // v1.3.0: the camera chases the ball while it rolls.
+                if (lane != null && ball != null) lane.UpdateFollow(ball.Position);
                 HandleRolling();
                 break;
             case GameState.Menu:
@@ -800,6 +908,8 @@ public class BowlingGameManager : MonoBehaviour
         ball.SetBallSpec(BowlingConfig.Balls[equipped]);
         ball.ThrowBall(power / 100f, spin);
         state = GameState.Rolling;
+        // v1.3.0: the camera starts chasing the ball.
+        if (lane != null) lane.StartFollow();
         rollStartTime = Time.time;
         settleTimer = 0f;
         crashPlayed = false;
@@ -818,6 +928,12 @@ public class BowlingGameManager : MonoBehaviour
         if (!crashPlayed)
         {
             crashPlayed = true;
+            // v1.3.0: brief slow motion on the first pin hit, like
+            // Bowling Crew's ball cam — about a third of normal speed
+            // for about 1 real second. OnBallHitPin only fires on the
+            // first pin contact of a roll, so this triggers once.
+            slowMoTimer = 1f;
+            Time.timeScale = 0.35f;
             if (sound != null) sound.PlayCrash(Mathf.Clamp(impactSpeed / 8f, 0.3f, 1f));
         }
     }
@@ -878,9 +994,12 @@ public class BowlingGameManager : MonoBehaviour
         // v1.2.0: pins FIRST. The old code checked the sticky gutter flag
         // before the strike branch, so a ball that clipped the gutter
         // after knocking the pins down was announced as a gutter ball.
+        // v1.3.0: in Spare Practice, "all pins down" means NO pins are
+        // standing — the old check (fallen == 10) could never fire, since
+        // a spare setup has at most 4 pins.
         if (mode == BowlingMode.SparePractice)
         {
-            result = fallen == 10
+            result = standing == 0
                 ? "All pins down!"
                 : fallen + (fallen == 1 ? " pin down, " : " pins down, ") + standing + " standing.";
         }
@@ -925,6 +1044,9 @@ public class BowlingGameManager : MonoBehaviour
         lastResult = result;
         gamePinsTotal += fallen;
         if (isGutter) gameHadGutter = true;
+        // v1.3.0: the pins are counted now, so the camera glides back to
+        // the aim framing while the result is announced.
+        if (lane != null) lane.ReturnToAim();
 
         // Coins (scored games only, so Practice cannot be farmed) and
         // missions / achievements.
@@ -957,7 +1079,9 @@ public class BowlingGameManager : MonoBehaviour
         {
             if (standing == 0)
             {
-                if (voiceBank != null) voiceBank.Play("down_10");
+                // v1.3.0: say the ACTUAL pin count — the old code always
+                // played "down_10", even for a 2-pin 7-10 split.
+                if (voiceBank != null) voiceBank.Play("down_" + fallen);
                 Narration.SpeakKey("spare_made", "Spare made! Nice shot.");
                 if (sound != null) sound.PlaySpare();
             }

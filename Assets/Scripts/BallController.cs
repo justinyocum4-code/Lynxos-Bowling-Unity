@@ -23,6 +23,7 @@ public class BallController : MonoBehaviour
 
     private GameObject ballObj;
     private GameObject aimGuide;
+    private GameObject shadowBlob; // v1.3.0: dark contact shadow under the ball
     private Material ballMat;
     private Rigidbody rb;
     private float spin;        // -3..+3
@@ -56,7 +57,8 @@ public class BallController : MonoBehaviour
             // v1.1.3: bright gold, not near-black. The old ball (0.08 grey)
             // was invisible against the dark lane even when in frame.
             mat.color = BowlingConfig.Gold;
-            if (shader.name.Contains("Universal Render Pipeline")) mat.SetFloat("_Smoothness", 0.8f);
+            // v1.3.0: GameLit takes _Smoothness like a URP shader.
+            if (shader.name.Contains("Universal Render Pipeline") || shader.name.Contains("GameLit")) mat.SetFloat("_Smoothness", 0.8f);
             else mat.SetFloat("_Glossiness", 0.8f);
             ballObj.GetComponent<MeshRenderer>().material = mat;
             ballMat = mat;
@@ -77,14 +79,55 @@ public class BallController : MonoBehaviour
             shine.GetComponent<MeshRenderer>().material = shineMat;
             Object.Destroy(shine.GetComponent<Collider>());
 
+            // v1.3.0: three small dark finger holes, so the ball's spin
+            // is visible as it rolls — a plain sphere looks the same
+            // spinning as standing still. They ride on the ball, so they
+            // roll with it. (Local offsets are in the ball's unit space:
+            // magnitude ~0.5 = the surface, since the ball is scaled to
+            // 0.216 m diameter.)
+            Material holeMat = new Material(shader);
+            holeMat.color = new Color(0.02f, 0.02f, 0.02f);
+            Vector3[] holePos = new Vector3[]
+            {
+                new Vector3(0.30f, 0.38f, 0.10f),
+                new Vector3(0.10f, 0.42f, 0.30f),
+                new Vector3(0.34f, 0.26f, 0.26f),
+            };
+            for (int i = 0; i < holePos.Length; i++)
+            {
+                GameObject hole = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                hole.name = "FingerHole" + i;
+                hole.transform.SetParent(ballObj.transform, false);
+                hole.transform.localPosition = holePos[i];
+                hole.transform.localScale = new Vector3(0.12f, 0.12f, 0.12f);
+                hole.GetComponent<MeshRenderer>().material = holeMat;
+                Object.Destroy(hole.GetComponent<Collider>());
+            }
+
+            // v1.3.0: a dark contact shadow that follows the ball — cheap
+            // insurance if the real-time shadows do not come through
+            // (they depend on the URP renderer asset). It rides just
+            // above the lane surface, under the ball.
+            shadowBlob = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            shadowBlob.name = "BallShadow";
+            shadowBlob.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            shadowBlob.transform.localScale = new Vector3(0.34f, 0.34f, 1f);
+            Material blobMat = new Material(shader);
+            blobMat.color = new Color(0.02f, 0.02f, 0.02f);
+            shadowBlob.GetComponent<MeshRenderer>().material = blobMat;
+            Object.Destroy(shadowBlob.GetComponent<Collider>());
+
             // Gold aim guide on the lane: a thin strip from the foul line
             // toward the pins at the current aim position, so the aim is
-            // visible as well as spoken.
+            // visible as well as spoken. v1.3.0: white, not gold — the
+            // old gold strip matched the ball exactly and the two merged.
+            Material guideMat = new Material(shader);
+            guideMat.color = new Color(0.9f, 0.9f, 0.9f);
             aimGuide = GameObject.CreatePrimitive(PrimitiveType.Quad);
             aimGuide.name = "AimGuide";
             aimGuide.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             aimGuide.transform.localScale = new Vector3(0.07f, 6f, 1f);
-            aimGuide.GetComponent<MeshRenderer>().material = mat;
+            aimGuide.GetComponent<MeshRenderer>().material = guideMat;
             Object.Destroy(aimGuide.GetComponent<Collider>());
         }
         // (shader null = keep the primitive's own default material.)
@@ -170,6 +213,18 @@ public class BallController : MonoBehaviour
         {
             InGutter = true;
         }
+    }
+
+    // v1.3.0: the shadow blob follows the ball every frame, on the lane
+    // or in the gutter. It rides just above the lane surface (0.006 m:
+    // above the board strips at 0.002 and the dots at 0.004), so it
+    // never z-fights with the lane markings.
+    private void Update()
+    {
+        if (shadowBlob == null || ballObj == null) return;
+        Vector3 p = ballObj.transform.position;
+        float y = Mathf.Max(0.006f, p.y - BowlingConfig.BallRadius + 0.006f);
+        shadowBlob.transform.position = new Vector3(p.x, y, p.z);
     }
 
     // Called by BallHitReporter on the first pin contact of a roll.

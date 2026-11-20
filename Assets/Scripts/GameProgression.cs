@@ -235,6 +235,109 @@ public static class GameProgression
         return true;
     }
 
+    // --- Wearable gear (v1.3.0): shirts, shoes, one accessory slot ---
+    // Same pattern as balls/skins/themes: LB12_-prefixed PlayerPrefs,
+    // earned coins only. Shirts/shoes always have something equipped
+    // (index 0 = starter); accessory -1 = none worn.
+
+    public static bool OwnsShirt(int index)
+    {
+        if (index < 0 || index >= BowlingConfig.Shirts.Length) return false;
+        if (BowlingConfig.Shirts[index].Cost <= 0) return true; // starter
+        return PlayerPrefs.GetInt(P + "OwnShirt_" + index, 0) == 1;
+    }
+
+    public static int EquippedShirt
+    {
+        get { return PlayerPrefs.GetInt(P + "EquippedShirt", 0); }
+        set
+        {
+            PlayerPrefs.SetInt(P + "EquippedShirt", value);
+            PlayerPrefs.Save();
+        }
+    }
+
+    public static bool BuyShirt(int index)
+    {
+        if (index < 0 || index >= BowlingConfig.Shirts.Length) return false;
+        if (OwnsShirt(index))
+        {
+            EquippedShirt = index;
+            return true;
+        }
+        if (!SpendCoins(BowlingConfig.Shirts[index].Cost)) return false;
+        PlayerPrefs.SetInt(P + "OwnShirt_" + index, 1);
+        EquippedShirt = index;
+        PlayerPrefs.Save();
+        return true;
+    }
+
+    public static bool OwnsShoe(int index)
+    {
+        if (index < 0 || index >= BowlingConfig.Shoes.Length) return false;
+        if (BowlingConfig.Shoes[index].Cost <= 0) return true; // starter
+        return PlayerPrefs.GetInt(P + "OwnShoe_" + index, 0) == 1;
+    }
+
+    public static int EquippedShoe
+    {
+        get { return PlayerPrefs.GetInt(P + "EquippedShoe", 0); }
+        set
+        {
+            PlayerPrefs.SetInt(P + "EquippedShoe", value);
+            PlayerPrefs.Save();
+        }
+    }
+
+    public static bool BuyShoe(int index)
+    {
+        if (index < 0 || index >= BowlingConfig.Shoes.Length) return false;
+        if (OwnsShoe(index))
+        {
+            EquippedShoe = index;
+            return true;
+        }
+        if (!SpendCoins(BowlingConfig.Shoes[index].Cost)) return false;
+        PlayerPrefs.SetInt(P + "OwnShoe_" + index, 1);
+        EquippedShoe = index;
+        PlayerPrefs.Save();
+        return true;
+    }
+
+    public static bool OwnsAccessory(int index)
+    {
+        if (index < 0 || index >= BowlingConfig.Accessories.Length) return false;
+        return PlayerPrefs.GetInt(P + "OwnAcc_" + index, 0) == 1;
+    }
+
+    // -1 = no accessory worn.
+    public static int EquippedAccessory
+    {
+        get { return PlayerPrefs.GetInt(P + "EquippedAcc", -1); }
+        set
+        {
+            PlayerPrefs.SetInt(P + "EquippedAcc", value);
+            PlayerPrefs.Save();
+        }
+    }
+
+    // Buying also equips it. Buying the one already worn takes it off
+    // (tap again to remove), so the player can go back to no accessory.
+    public static bool BuyAccessory(int index)
+    {
+        if (index < 0 || index >= BowlingConfig.Accessories.Length) return false;
+        if (OwnsAccessory(index))
+        {
+            EquippedAccessory = (EquippedAccessory == index) ? -1 : index;
+            return true;
+        }
+        if (!SpendCoins(BowlingConfig.Accessories[index].Cost)) return false;
+        PlayerPrefs.SetInt(P + "OwnAcc_" + index, 1);
+        EquippedAccessory = index;
+        PlayerPrefs.Save();
+        return true;
+    }
+
     public static Color AccentColor()
     {
         int t = EquippedTheme;

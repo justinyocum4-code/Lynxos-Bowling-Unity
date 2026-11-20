@@ -48,7 +48,8 @@ public class PinManager : MonoBehaviour
             }
             Material mat = new Material(shader);
             mat.color = color;
-            if (shader.name.Contains("Universal Render Pipeline"))
+            // v1.3.0: GameLit takes _Smoothness like a URP shader.
+            if (shader.name.Contains("Universal Render Pipeline") || shader.name.Contains("GameLit"))
             {
                 mat.SetFloat("_Smoothness", smoothness);
             }
