@@ -23,6 +23,7 @@ public class BallController : MonoBehaviour
 
     private GameObject ballObj;
     private GameObject aimGuide;
+    private Material ballMat;
     private Rigidbody rb;
     private float spin;        // -3..+3
     private float hookFactor = 1f;
@@ -58,6 +59,23 @@ public class BallController : MonoBehaviour
             if (shader.name.Contains("Universal Render Pipeline")) mat.SetFloat("_Smoothness", 0.8f);
             else mat.SetFloat("_Glossiness", 0.8f);
             ballObj.GetComponent<MeshRenderer>().material = mat;
+            ballMat = mat;
+
+            // v1.2.0: a small white shine on the ball, so it reads as a
+            // glossy ball instead of a flat coloured circle. It rides on
+            // the ball, so it rolls with it. (The ball is scaled to 0.216
+            // diameter, so the local offset/scale are in that space: the
+            // offset magnitude 0.499 x 0.216 = the 0.108 m ball radius, so
+            // the shine sits half-proud of the surface.)
+            GameObject shine = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            shine.name = "Shine";
+            shine.transform.SetParent(ballObj.transform, false);
+            shine.transform.localPosition = new Vector3(0.22f, 0.35f, 0.28f);
+            shine.transform.localScale = new Vector3(0.23f, 0.23f, 0.23f);
+            Material shineMat = new Material(shader);
+            shineMat.color = new Color(1f, 1f, 1f);
+            shine.GetComponent<MeshRenderer>().material = shineMat;
+            Object.Destroy(shine.GetComponent<Collider>());
 
             // Gold aim guide on the lane: a thin strip from the foul line
             // toward the pins at the current aim position, so the aim is
@@ -93,6 +111,12 @@ public class BallController : MonoBehaviour
         if (rb != null) rb.mass = spec.WeightKg;
         hookFactor = spec.HookFactor;
         speedBonus = spec.SpeedBonus;
+    }
+
+    // Recolours the ball (ball's own colour, or an equipped skin colour).
+    public void SetBallColor(Color color)
+    {
+        if (ballMat != null) ballMat.color = color;
     }
 
     public void ResetBall(float aimX)

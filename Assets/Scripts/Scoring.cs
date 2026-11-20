@@ -7,6 +7,10 @@ public class BowlingScore
 {
     private List<int> rolls = new List<int>();
 
+    // Frames in the match: 10 for a full game, 3 for a Quick Match. The
+    // last frame always plays by 10th-frame rules (up to 3 balls).
+    public int TotalFrames = 10;
+
     public IReadOnlyList<int> Rolls { get { return rolls; } }
     public int RollCount { get { return rolls.Count; } }
 
@@ -27,7 +31,7 @@ public class BowlingScore
         for (int f = 1; f < frame; f++)
         {
             if (idx >= rolls.Count) return -1;
-            if (f <= 9)
+            if (f < TotalFrames)
             {
                 if (rolls[idx] == 10) idx += 1;
                 else idx += 2;
@@ -39,7 +43,7 @@ public class BowlingScore
     public int CurrentFrame()
     {
         int idx = 0;
-        for (int f = 1; f <= 9; f++)
+        for (int f = 1; f < TotalFrames; f++)
         {
             if (idx >= rolls.Count) return f;
             if (rolls[idx] == 10)
@@ -52,7 +56,7 @@ public class BowlingScore
                 idx += 2;
             }
         }
-        return 10;
+        return TotalFrames;
     }
 
     // Balls already thrown in the current frame (0, 1 or 2).
@@ -74,8 +78,8 @@ public class BowlingScore
 
     public bool IsComplete()
     {
-        if (CurrentFrame() < 10) return false;
-        int start = FrameStartIndex(10);
+        if (CurrentFrame() < TotalFrames) return false;
+        int start = FrameStartIndex(TotalFrames);
         if (start < 0) return false;
         int n = rolls.Count - start;
         if (n < 2) return false;
@@ -95,7 +99,7 @@ public class BowlingScore
         int idx = 0;
         for (int f = 1; f <= frame; f++)
         {
-            if (f <= 9)
+            if (f < TotalFrames)
             {
                 if (idx >= rolls.Count) return -1;
                 if (rolls[idx] == 10)
@@ -143,9 +147,9 @@ public class BowlingScore
     {
         int total = 0;
         int idx = 0;
-        for (int f = 1; f <= 10; f++)
+        for (int f = 1; f <= TotalFrames; f++)
         {
-            if (f <= 9)
+            if (f < TotalFrames)
             {
                 if (idx >= rolls.Count) break;
                 if (rolls[idx] == 10)
@@ -186,7 +190,7 @@ public class BowlingScore
         int start = FrameStartIndex(frame);
         if (start < 0 || start >= rolls.Count) return "";
         int n = rolls.Count - start;
-        if (frame <= 9)
+        if (frame < TotalFrames)
         {
             int b1 = rolls[start];
             if (b1 == 10) return "X";

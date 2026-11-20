@@ -13,6 +13,9 @@ public class LaneBuilder : MonoBehaviour
     private Material wallMat;
     private Material goldMat;
     private Material darkDotMat;
+    private Material arrowMat;
+    private Material boardLightMat;
+    private Material boardDarkMat;
 
     // First failure recorded here, so the manager can show + speak it
     // instead of dying silent on a black screen.
@@ -53,13 +56,24 @@ public class LaneBuilder : MonoBehaviour
         if (BumpersRight != null) BumpersRight.SetActive(on);
     }
 
+    // v1.2.0: recolour the gold accent (foul line, gutter trim, pin mask
+    // trim, alley trim) for an equipped alley theme. The saved theme is
+    // applied by the manager right after Build().
+    public void SetAccentColor(Color color)
+    {
+        if (goldMat != null) goldMat.color = color;
+    }
+
     private void CreateMaterials()
     {
         laneMat = MakeMaterial(new Color(0.55f, 0.38f, 0.18f), 0.4f); // wood
         gutterMat = MakeMaterial(new Color(0.08f, 0.08f, 0.08f), 0.2f);
         wallMat = MakeMaterial(new Color(0.05f, 0.05f, 0.06f), 0.2f);
-        goldMat = MakeMaterial(BowlingConfig.Gold, 0.6f);
+        goldMat = MakeMaterial(GameProgression.AccentColor(), 0.6f);
         darkDotMat = MakeMaterial(new Color(0.15f, 0.1f, 0.05f), 0.3f);
+        arrowMat = MakeMaterial(new Color(0.95f, 0.85f, 0.45f), 0.4f); // bright gold arrows
+        boardLightMat = MakeMaterial(new Color(0.62f, 0.45f, 0.22f), 0.4f);
+        boardDarkMat = MakeMaterial(new Color(0.48f, 0.32f, 0.15f), 0.4f);
     }
 
     // v1.1.4: shader via BowlingConfig.FindGameShader (pipeline-aware).
@@ -140,9 +154,10 @@ public class LaneBuilder : MonoBehaviour
             new Vector3(BowlingConfig.LaneWidth, 0.1f, totalLength), laneMat, true, lanePhys);
 
         // Foul line: thin gold strip across the lane at z = 0, visual only.
+        // y = 0.004 so it sits above the v1.2.0 board strips (tops at 0.002).
         GameObject line = GameObject.CreatePrimitive(PrimitiveType.Quad);
         line.name = "FoulLine";
-        line.transform.position = new Vector3(0f, 0.002f, 0f);
+        line.transform.position = new Vector3(0f, 0.004f, 0f);
         line.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         line.transform.localScale = new Vector3(BowlingConfig.LaneWidth, 0.06f, 1f);
         if (goldMat != null) line.GetComponent<MeshRenderer>().material = goldMat;
@@ -165,6 +180,10 @@ public class LaneBuilder : MonoBehaviour
             CreateBox("GutterWall" + (s < 0 ? "L" : "R"),
                 new Vector3(s * (laneHalf + BowlingConfig.GutterWidth + 0.01f), 0.1f, centerZ),
                 new Vector3(0.02f, 0.4f, totalLength), wallMat, true, null);
+            // v1.2.0: gold trim along the top of each gutter wall.
+            CreateBox("GutterTrim" + (s < 0 ? "L" : "R"),
+                new Vector3(s * (laneHalf + BowlingConfig.GutterWidth + 0.01f), 0.31f, centerZ),
+                new Vector3(0.03f, 0.02f, totalLength), goldMat, false, null);
         }
     }
 
@@ -208,6 +227,19 @@ public class LaneBuilder : MonoBehaviour
 
     private void BuildDecor()
     {
+        // v1.2.0: board striping — a real lane is 39 boards. Alternating
+        // light/dark thin strips down the whole lane, so the wood reads as
+        // boards instead of one flat slab. Visual only, no colliders.
+        float totalLength = BowlingConfig.ApproachLength + BowlingConfig.LaneLength + BowlingConfig.PitLength;
+        float centerZ = -BowlingConfig.ApproachLength + totalLength / 2f;
+        for (int i = 0; i < 39; i++)
+        {
+            float x = -BowlingConfig.LaneWidth / 2f + (i + 0.5f) * BowlingConfig.BoardWidth;
+            CreateBox("Board" + i, new Vector3(x, 0.001f, centerZ),
+                new Vector3(BowlingConfig.BoardWidth * 0.9f, 0.002f, totalLength),
+                (i % 2 == 0) ? boardLightMat : boardDarkMat, false, null);
+        }
+
         // Range dots and arrows on the lane (visual only, no colliders).
         float[] dotX = new float[] { -0.36f, -0.24f, -0.12f, 0f, 0.12f, 0.24f, 0.36f };
         for (int i = 0; i < dotX.Length; i++)
@@ -218,7 +250,7 @@ public class LaneBuilder : MonoBehaviour
         for (int i = 0; i < 5; i++)
         {
             CreateBox("LaneArrow" + i, new Vector3(-0.24f + i * 0.12f, 0.002f, 5.0f),
-                new Vector3(0.04f, 0.004f, 0.14f), darkDotMat, false, null);
+                new Vector3(0.04f, 0.004f, 0.14f), arrowMat, false, null);
         }
     }
 
@@ -233,7 +265,8 @@ public class LaneBuilder : MonoBehaviour
         Material woodMat = MakeMaterial(new Color(0.22f, 0.14f, 0.07f), 0.35f);
         Material ceilMat = MakeMaterial(new Color(0.06f, 0.06f, 0.07f), 0.1f);
         Material neighMat = MakeMaterial(new Color(0.35f, 0.24f, 0.12f), 0.35f);
-        Material panelMat = MakeMaterial(new Color(1f, 0.95f, 0.8f), 0.1f);
+        // v1.2.0: warmer light panels (more amber, less cold white).
+        Material panelMat = MakeMaterial(new Color(1f, 0.88f, 0.62f), 0.1f);
 
         // Floor under everything, so there is no void below the lane.
         CreateBox("AlleyFloor", new Vector3(0f, -0.16f, 8f),
@@ -252,12 +285,18 @@ public class LaneBuilder : MonoBehaviour
         CreateBox("AlleyCeiling", new Vector3(0f, 4.15f, 8f),
             new Vector3(14f, 0.1f, 30f), ceilMat, false, null);
 
-        // Light panels on the ceiling, down the lane.
+        // Light panels on the ceiling, down the lane. v1.2.0: each panel
+        // gets a thin gold frame, so the ceiling reads as fitted lights
+        // instead of flat white slabs.
         float[] panelZ = new float[] { 1f, 7f, 13f, 18f };
         for (int i = 0; i < panelZ.Length; i++)
         {
             CreateBox("LightPanel" + i, new Vector3(0f, 4.08f, panelZ[i]),
                 new Vector3(1.6f, 0.04f, 0.9f), panelMat, false, null);
+            CreateBox("LightFrameA" + i, new Vector3(0f, 4.06f, panelZ[i] - 0.47f),
+                new Vector3(1.7f, 0.02f, 0.06f), goldMat, false, null);
+            CreateBox("LightFrameB" + i, new Vector3(0f, 4.06f, panelZ[i] + 0.47f),
+                new Vector3(1.7f, 0.02f, 0.06f), goldMat, false, null);
         }
 
         // Neighbouring lanes, one each side, slightly darker wood.

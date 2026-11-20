@@ -49,26 +49,100 @@ public static class BowlingConfig
         {  0.4572f,  0.9144f }, // 10
     };
 
+    // v1.2.0: balls are side-grades, never pay-to-win. Each starter and
+    // each unlockable ball trades weight, speed and hook against each
+    // other — none is stronger overall. Cost 0 = starter, owned from the
+    // start; anything with a Cost is bought with coins earned by playing.
     public struct BallSpec
     {
         public string Name;
         public float WeightKg;
         public float SpeedBonus;  // m/s added to the throw
         public float HookFactor;  // hook strength multiplier
-        public BallSpec(string name, float weightKg, float speedBonus, float hookFactor)
+        public Color Color;       // the ball's own colour
+        public int Cost;          // coins, 0 = starter
+        public string Desc;       // short speakable hint
+        public BallSpec(string name, float weightKg, float speedBonus, float hookFactor,
+            Color color, int cost, string desc)
         {
             Name = name;
             WeightKg = weightKg;
             SpeedBonus = speedBonus;
             HookFactor = hookFactor;
+            Color = color;
+            Cost = cost;
+            Desc = desc;
         }
     }
 
     public static readonly BallSpec[] Balls = new BallSpec[]
     {
-        new BallSpec("Light 12 lb",    5.44f,  0.5f, 1.2f),
-        new BallSpec("Standard 14 lb", 6.35f,  0.0f, 1.0f),
-        new BallSpec("Heavy 16 lb",    7.26f, -0.5f, 0.8f),
+        // Starters (owned from the start).
+        new BallSpec("Heavy 16 lb",    7.26f, -0.5f, 0.8f, new Color(0.96f, 0.77f, 0.09f), 0, "More power"),
+        new BallSpec("Bouncy 13 lb",   5.90f,  0.4f, 1.4f, new Color(0.95f, 0.50f, 0.10f), 0, "More hook"),
+        new BallSpec("Accurate 14 lb", 6.35f,  0.1f, 0.6f, new Color(0.85f, 0.85f, 0.90f), 0, "Straighter"),
+        // Unlockable with earned coins — still side-grades.
+        new BallSpec("Comet",    6.80f,  0.2f, 1.1f, new Color(0.90f, 0.25f, 0.15f),  60, "Fast and hooky"),
+        new BallSpec("Midnight", 6.80f,  0.0f, 1.0f, new Color(0.15f, 0.25f, 0.70f), 120, "Steady all-rounder"),
+        new BallSpec("Thunder",  7.26f, -0.2f, 1.2f, new Color(0.55f, 0.30f, 0.85f), 200, "Heavy hitter"),
+        new BallSpec("Feather",  5.44f,  0.6f, 1.5f, new Color(0.50f, 0.85f, 0.90f), 200, "Light and lively"),
+        new BallSpec("Gold Pro", 6.35f,  0.3f, 0.9f, new Color(1.00f, 0.85f, 0.20f), 350, "Smooth and quick"),
+    };
+
+    // Spoken clip key for each ball, in Balls[] order (used by the ball
+    // select panel so every button speaks on a TV with no TTS voice).
+    public static readonly string[] BallKeys = new string[]
+    {
+        "ball_heavy", "ball_bouncy", "ball_accurate", "ball_comet",
+        "ball_midnight", "ball_thunder", "ball_feather", "ball_goldpro",
+    };
+
+    // Ball colours (skins): recolour any ball. Earned coins only.
+    public struct GearSkin
+    {
+        public string Name;
+        public Color Color;
+        public int Cost;
+        public string Key;
+        public GearSkin(string name, Color color, int cost, string key)
+        {
+            Name = name;
+            Color = color;
+            Cost = cost;
+            Key = key;
+        }
+    }
+
+    public static readonly GearSkin[] Skins = new GearSkin[]
+    {
+        new GearSkin("Ruby",    new Color(0.85f, 0.10f, 0.15f),  40, "skin_ruby"),
+        new GearSkin("Ocean",   new Color(0.10f, 0.45f, 0.85f),  40, "skin_ocean"),
+        new GearSkin("Emerald", new Color(0.10f, 0.70f, 0.35f),  60, "skin_emerald"),
+        new GearSkin("Violet",  new Color(0.60f, 0.30f, 0.90f), 100, "skin_violet"),
+    };
+
+    // Alley looks: recolour the gold accent trim (foul line, gutter trim,
+    // pin mask trim) of the whole alley. Earned coins only.
+    public struct AlleyTheme
+    {
+        public string Name;
+        public Color Accent;
+        public int Cost;
+        public string Key;
+        public AlleyTheme(string name, Color accent, int cost, string key)
+        {
+            Name = name;
+            Accent = accent;
+            Cost = cost;
+            Key = key;
+        }
+    }
+
+    public static readonly AlleyTheme[] Themes = new AlleyTheme[]
+    {
+        new AlleyTheme("Midnight Alley", new Color(0.30f, 0.50f, 1.00f),  80, "theme_midnight"),
+        new AlleyTheme("Sunset Alley",   new Color(1.00f, 0.45f, 0.15f), 100, "theme_sunset"),
+        new AlleyTheme("Emerald Alley",  new Color(0.15f, 0.85f, 0.40f), 120, "theme_emerald"),
     };
 
     public struct SpareSetup

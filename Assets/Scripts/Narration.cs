@@ -61,6 +61,73 @@ public static class Narration
         Speak(fallbackText);
     }
 
+    // Same as SpeakKey, but interrupts the queue: for fast-changing
+    // feedback (power meter bands) where queued clips would lag behind.
+    public static void SpeakKeyNow(string key, string fallbackText)
+    {
+        if (!Enabled) return;
+        if (Bank != null && Bank.HasClip(key))
+        {
+            Bank.PlayNow(key);
+            return;
+        }
+        Speak(fallbackText);
+    }
+
+    // v1.2.0: UI labels (menus, buttons, toggles). When TalkBack is on,
+    // TalkBack already reads those labels aloud — the game saying them too
+    // is the "two voices talking over each other" bug from v1.1.5. So UI
+    // lines are skipped entirely under TalkBack; gameplay lines (aim,
+    // power, results, score) still use SpeakKey/Speak because TalkBack
+    // cannot know them.
+    public static void SpeakUIKey(string key, string fallbackText)
+    {
+        if (TalkBackOn) return;
+        SpeakKey(key, fallbackText);
+    }
+
+    // True when Android's touch exploration (TalkBack) is on. Checked
+    // once and cached. Same AndroidJavaObject pattern as the TV check in
+    // BowlingUI.IsTelevision. False on any failure, so a broken check
+    // never silences the game's own voice.
+    private static bool talkBackChecked;
+    private static bool talkBackOn;
+
+    public static bool TalkBackOn
+    {
+        get
+        {
+            if (!talkBackChecked)
+            {
+                talkBackChecked = true;
+                talkBackOn = DetectTalkBack();
+            }
+            return talkBackOn;
+        }
+    }
+
+    private static bool DetectTalkBack()
+    {
+#if UNITY_ANDROID && !UNITY_EDITOR
+        try
+        {
+            using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+            using (AndroidJavaObject activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+            using (AndroidJavaObject am = activity.Call<AndroidJavaObject>("getSystemService", "accessibility"))
+            {
+                return am.Call<bool>("isTouchExplorationEnabled");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("[Narration] TalkBack check failed: " + e.Message);
+            return false;
+        }
+#else
+        return false;
+#endif
+    }
+
     public static void Speak(string text)
     {
         if (!Enabled) return;

@@ -31,10 +31,15 @@ public class SoundSynth : MonoBehaviour
 
     private void BuildClips()
     {
-        crashClip = MakeNoiseBurst("PinCrash", 0.45f, 0.9f);
+        // v1.2.0: every clip is normalised to ~0.9 peak. The v1.1 clips
+        // were near-silent BY CONSTRUCTION (roll ~0.03 out, music ~0.02,
+        // crash a 0.45 s burst with a fast decay) while narration plays at
+        // 0.9, so the effects vanished next to the voice. The crash is
+        // also longer now (1.2 s, slower decay) so it reads as pins.
+        crashClip = MakeNoiseBurst("PinCrash", 1.2f, 0.9f);
         gutterClip = MakeDescendingTone("Gutter", 0.7f, 420f, 140f);
         cheerClip = MakeCheer("Cheer", 1.4f);
-        clickClip = MakeTone("Click", 0.07f, 880f, 0.5f);
+        clickClip = MakeTone("Click", 0.07f, 880f, 0.8f);
         spareClip = MakeTwoTone("Spare", 0.12f, 660f, 990f);
         rollClip = MakeRollLoop("Roll", 1.2f);
         musicClip = MakeMusicLoop("Music", 8f);
@@ -46,7 +51,7 @@ public class SoundSynth : MonoBehaviour
         if (musicSource != null && musicClip != null && !musicSource.isPlaying)
         {
             musicSource.clip = musicClip;
-            musicSource.volume = 0.16f;
+            musicSource.volume = 0.35f;
             musicSource.Play();
         }
     }
@@ -63,22 +68,22 @@ public class SoundSynth : MonoBehaviour
 
     public void PlayGutter()
     {
-        if (oneShotSource != null && gutterClip != null) oneShotSource.PlayOneShot(gutterClip, 0.7f);
+        if (oneShotSource != null && gutterClip != null) oneShotSource.PlayOneShot(gutterClip, 0.9f);
     }
 
     public void PlayCheer()
     {
-        if (oneShotSource != null && cheerClip != null) oneShotSource.PlayOneShot(cheerClip, 0.8f);
+        if (oneShotSource != null && cheerClip != null) oneShotSource.PlayOneShot(cheerClip, 1f);
     }
 
     public void PlayClick()
     {
-        if (oneShotSource != null && clickClip != null) oneShotSource.PlayOneShot(clickClip, 0.6f);
+        if (oneShotSource != null && clickClip != null) oneShotSource.PlayOneShot(clickClip, 0.8f);
     }
 
     public void PlaySpare()
     {
-        if (oneShotSource != null && spareClip != null) oneShotSource.PlayOneShot(spareClip, 0.7f);
+        if (oneShotSource != null && spareClip != null) oneShotSource.PlayOneShot(spareClip, 0.9f);
     }
 
     public void StartRoll()
@@ -86,7 +91,7 @@ public class SoundSynth : MonoBehaviour
         if (rollSource != null && rollClip != null && !rollSource.isPlaying)
         {
             rollSource.clip = rollClip;
-            rollSource.volume = 0.25f;
+            rollSource.volume = 0.7f;
             rollSource.Play();
         }
     }
@@ -115,6 +120,22 @@ public class SoundSynth : MonoBehaviour
         return new float[Mathf.Max(1, Mathf.RoundToInt(seconds * SampleRate))];
     }
 
+    // Scales a buffer so its loudest sample hits the target peak. Every
+    // clip builder runs through this, so no effect can ever be
+    // accidentally near-silent again (the v1.1.5 bug).
+    private static void Normalize(float[] data, float peak)
+    {
+        float max = 0f;
+        for (int i = 0; i < data.Length; i++)
+        {
+            float a = Mathf.Abs(data[i]);
+            if (a > max) max = a;
+        }
+        if (max <= 0.0001f) return;
+        float scale = peak / max;
+        for (int i = 0; i < data.Length; i++) data[i] *= scale;
+    }
+
     // White noise with an exponential decay, lightly low-passed: pin crash.
     private AudioClip MakeNoiseBurst(string name, float seconds, float volume)
     {
@@ -124,10 +145,11 @@ public class SoundSynth : MonoBehaviour
         {
             float t = (float)i / data.Length;
             float noise = Random.Range(-1f, 1f);
-            low += 0.25f * (noise - low); // one-pole low-pass
-            float env = Mathf.Exp(-6f * t);
+            low += 0.35f * (noise - low); // one-pole low-pass
+            float env = Mathf.Exp(-2.5f * t); // slow decay: pins keep rattling
             data[i] = low * env * volume;
         }
+        Normalize(data, 0.9f);
         return MakeClip(name, seconds, data);
     }
 
@@ -144,6 +166,7 @@ public class SoundSynth : MonoBehaviour
             float env = (1f - t) * (1f - t);
             data[i] = Mathf.Sin(phase) * env * 0.6f;
         }
+        Normalize(data, 0.9f);
         return MakeClip(name, seconds, data);
     }
 
@@ -162,6 +185,7 @@ public class SoundSynth : MonoBehaviour
             float wobble = 0.75f + 0.25f * Mathf.Sin(t * 40f);
             data[i] = low * rise * fall * wobble * 0.9f;
         }
+        Normalize(data, 0.9f);
         return MakeClip(name, seconds, data);
     }
 
@@ -175,6 +199,7 @@ public class SoundSynth : MonoBehaviour
             float env = Mathf.Min(1f, t * 20f) * (1f - t);
             data[i] = Mathf.Sin(2f * Mathf.PI * freq * i / SampleRate) * env * volume;
         }
+        Normalize(data, 0.9f);
         return MakeClip(name, seconds, data);
     }
 
@@ -192,6 +217,7 @@ public class SoundSynth : MonoBehaviour
             float env = Mathf.Min(1f, t * 20f) * (1f - t);
             data[i] = Mathf.Sin(2f * Mathf.PI * freq * local / SampleRate) * env * 0.6f;
         }
+        Normalize(data, 0.9f);
         return MakeClip(name, total, data);
     }
 
@@ -203,11 +229,12 @@ public class SoundSynth : MonoBehaviour
         float brown = 0f;
         for (int i = 0; i < data.Length; i++)
         {
-            brown += (Random.Range(-1f, 1f) - brown) * 0.02f;
+            brown += (Random.Range(-1f, 1f) - brown) * 0.05f;
             float fade = Mathf.Min(1f, i / (SampleRate * 0.02f));
             fade *= Mathf.Min(1f, (data.Length - i) / (SampleRate * 0.02f));
-            data[i] = brown * 1.6f * fade;
+            data[i] = brown * 8f * fade;
         }
+        Normalize(data, 0.9f);
         return MakeClip(name, seconds, data);
     }
 
@@ -247,6 +274,10 @@ public class SoundSynth : MonoBehaviour
             edge *= Mathf.Min(1f, (data.Length - i) / (SampleRate * 0.03f));
             data[i] = (pad * padEnv + bass) * edge;
         }
+        // Music sits under the voice, so it normalises lower than the
+        // effects (0.55 peak) — but it must still be audible, unlike the
+        // ~0.02 it settled at in v1.1.
+        Normalize(data, 0.55f);
         return MakeClip(name, seconds, data);
     }
 }

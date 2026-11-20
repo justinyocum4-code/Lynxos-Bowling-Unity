@@ -1,8 +1,10 @@
 // Lynxos Bowling — all uGUI menus and HUD, built at runtime.
-// Panels: Main Menu, Ball Select, Spare Practice select, HUD (with a
-// compact 10-frame scoreboard strip), Game Over. Gold #F5C518 on dark
-// #0A0A0A, big text, explicit D-pad navigation with wrap-around, and every
-// button speaks its label when focused so the game needs no TalkBack.
+// Panels: Main Menu, Ball Select, Spare Practice select, More, Gear Shop,
+// Achievements, HUD (with a compact scoreboard strip), Game Over.
+// Gold #F5C518 on dark #0A0A0A, big text, explicit D-pad navigation with
+// wrap-around, and every button speaks its label when focused so the game
+// needs no TalkBack. (v1.2.0: under TalkBack the game stops speaking UI
+// labels — TalkBack reads them — via Narration.SpeakUIKey.)
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -13,6 +15,7 @@ public class BowlingUI : MonoBehaviour
     // Callbacks wired by BowlingGameManager.
     public System.Action OnAnyButton;
     public System.Action OnFullGame;
+    public System.Action OnQuickMatch;
     public System.Action OnPractice;
     public System.Action OnSparePracticeMenu;
     public System.Action OnTwoPlayers;
@@ -23,6 +26,11 @@ public class BowlingUI : MonoBehaviour
     public System.Action OnToggleVoice;
     public System.Action OnPlayAgain;
     public System.Action OnQuitToMenu;
+    public System.Action OnOpenMore;
+    public System.Action OnOpenGear;
+    public System.Action OnOpenAchievements;
+    public System.Action OnToggleTimer;
+    public System.Action<int, int> OnGearSelected; // (kind, index): 0 ball, 1 skin, 2 theme
 
     // Touch controls (tablet): shown only when the device has a touchscreen.
     public System.Action OnTouchAimLeft;
@@ -43,22 +51,33 @@ public class BowlingUI : MonoBehaviour
     private GameObject menuPanel;
     private GameObject ballPanel;
     private GameObject sparePanel;
+    private GameObject morePanel;
+    private GameObject gearPanel;
+    private GameObject achPanel;
     private GameObject hudPanel;
     private GameObject gameOverPanel;
     private GameObject touchPanel;
 
     private ButtonSpeaker bumpersSpeaker;
     private ButtonSpeaker voiceSpeaker;
+    private ButtonSpeaker timerSpeaker;
 
     private List<Button> menuButtons = new List<Button>();
     private List<Button> ballButtons = new List<Button>();
     private List<Button> spareButtons = new List<Button>();
+    private List<Button> moreButtons = new List<Button>();
+    private List<Button> gearButtons = new List<Button>();
+    private List<Button> achButtons = new List<Button>();
     private List<Button> gameOverButtons = new List<Button>();
 
     private Button ballButton;
     private Button bumpersButton;
     private Button voiceButton;
+    private Button timerButton;
     private Text menuBest;
+    private Text gearCoins;
+    private Text[] achLines = new Text[10];
+    private Text[] missionLines = new Text[3];
 
     private Text hudPlayer;
     private Text hudFrame;
@@ -104,6 +123,9 @@ public class BowlingUI : MonoBehaviour
         BuildMenuPanel();
         BuildBallPanel();
         BuildSparePanel();
+        BuildMorePanel();
+        BuildGearPanel();
+        BuildAchPanel();
         BuildHUDPanel();
         BuildTouchPanel();
         BuildGameOverPanel();
@@ -181,30 +203,35 @@ public class BowlingUI : MonoBehaviour
         CreateText(menuPanel, "LYNXOS BOWLING", 72, BowlingConfig.Gold,
             new Vector2(0.5f, 1f), new Vector2(0f, -70f), new Vector2(1400f, 100f), TextAnchor.MiddleCenter);
         CreateText(menuPanel, "Real 3D bowling", 30, Color.white,
-            new Vector2(0.5f, 1f), new Vector2(0f, -175f), new Vector2(1200f, 50f), TextAnchor.MiddleCenter);
+            new Vector2(0.5f, 1f), new Vector2(0f, -160f), new Vector2(1200f, 50f), TextAnchor.MiddleCenter);
 
-        float y = -280f;
-        menuButtons.Add(CreateButton(menuPanel, "Full Game", y, 760f, 84f, () => { if (OnFullGame != null) OnFullGame(); }, "full_game"));
-        y -= 102f;
-        menuButtons.Add(CreateButton(menuPanel, "Practice", y, 760f, 84f, () => { if (OnPractice != null) OnPractice(); }, "practice"));
-        y -= 102f;
-        menuButtons.Add(CreateButton(menuPanel, "Spare Practice", y, 760f, 84f, () => { if (OnSparePracticeMenu != null) OnSparePracticeMenu(); }, "spare_practice"));
-        y -= 102f;
-        menuButtons.Add(CreateButton(menuPanel, "2 Players", y, 760f, 84f, () => { if (OnTwoPlayers != null) OnTwoPlayers(); }, "two_players"));
-        y -= 102f;
-        ballButton = CreateButton(menuPanel, "Ball: Standard 14 lb", y, 760f, 84f, () => { if (OnOpenBallSelect != null) OnOpenBallSelect(); }, "ball_select");
+        // v1.2.0: nine buttons, so they are shorter and tighter than the
+        // old seven. Best score and coins share one line above them.
+        menuBest = CreateText(menuPanel, "Best score: 0   •   Coins: 0", 30, BowlingConfig.Gold,
+            new Vector2(0.5f, 1f), new Vector2(0f, -215f), new Vector2(1200f, 50f), TextAnchor.MiddleCenter);
+        float y = -300f;
+        menuButtons.Add(CreateButton(menuPanel, "Full Game", y, 760f, 76f, () => { if (OnFullGame != null) OnFullGame(); }, "full_game"));
+        y -= 88f;
+        menuButtons.Add(CreateButton(menuPanel, "Quick Match", y, 760f, 76f, () => { if (OnQuickMatch != null) OnQuickMatch(); }, "quick_match"));
+        y -= 88f;
+        menuButtons.Add(CreateButton(menuPanel, "Practice", y, 760f, 76f, () => { if (OnPractice != null) OnPractice(); }, "practice"));
+        y -= 88f;
+        menuButtons.Add(CreateButton(menuPanel, "Spare Practice", y, 760f, 76f, () => { if (OnSparePracticeMenu != null) OnSparePracticeMenu(); }, "spare_practice"));
+        y -= 88f;
+        menuButtons.Add(CreateButton(menuPanel, "2 Players", y, 760f, 76f, () => { if (OnTwoPlayers != null) OnTwoPlayers(); }, "two_players"));
+        y -= 88f;
+        ballButton = CreateButton(menuPanel, "Ball: Heavy 16 lb", y, 760f, 76f, () => { if (OnOpenBallSelect != null) OnOpenBallSelect(); }, "ball_select");
         menuButtons.Add(ballButton);
-        y -= 102f;
-        bumpersButton = CreateButton(menuPanel, "Bumpers: Off", y, 760f, 84f, () => { if (OnToggleBumpers != null) OnToggleBumpers(); }, "bumpers_off");
+        y -= 88f;
+        bumpersButton = CreateButton(menuPanel, "Bumpers: Off", y, 760f, 76f, () => { if (OnToggleBumpers != null) OnToggleBumpers(); }, "bumpers_off");
         menuButtons.Add(bumpersButton);
         bumpersSpeaker = bumpersButton.GetComponent<ButtonSpeaker>();
-        y -= 102f;
-        voiceButton = CreateButton(menuPanel, "Voice: On", y, 760f, 84f, () => { if (OnToggleVoice != null) OnToggleVoice(); }, "voice_on");
+        y -= 88f;
+        voiceButton = CreateButton(menuPanel, "Voice: On", y, 760f, 76f, () => { if (OnToggleVoice != null) OnToggleVoice(); }, "voice_on");
         menuButtons.Add(voiceButton);
         voiceSpeaker = voiceButton.GetComponent<ButtonSpeaker>();
-        y -= 102f;
-        menuBest = CreateText(menuPanel, "Best score: 0", 30, BowlingConfig.Gold,
-            new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(760f, 50f), TextAnchor.MiddleCenter);
+        y -= 88f;
+        menuButtons.Add(CreateButton(menuPanel, "More", y, 760f, 76f, () => { if (OnOpenMore != null) OnOpenMore(); }, "more_btn"));
         WireVertical(menuButtons);
     }
 
@@ -213,26 +240,33 @@ public class BowlingUI : MonoBehaviour
         ballPanel = CreatePanel("BallSelect", true);
         CreateText(ballPanel, "Choose your ball", 56, BowlingConfig.Gold,
             new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(1200f, 80f), TextAnchor.MiddleCenter);
-        float y = -280f;
-        string[] ballKeys = new string[] { "ball_light", "ball_standard", "ball_heavy" };
-        for (int i = 0; i < BowlingConfig.Balls.Length; i++)
-        {
-            int index = i;
-            string label = BowlingConfig.Balls[i].Name + BallHint(i);
-            ballButtons.Add(CreateButton(ballPanel, label, y, 760f, 84f,
-                () => { if (OnBallSelected != null) OnBallSelected(index); }, ballKeys[i]));
-            y -= 102f;
-        }
-        ballButtons.Add(CreateButton(ballPanel, "Back", y, 760f, 84f,
-            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back"));
-        WireVertical(ballButtons);
+        // Buttons are rebuilt in ShowBallSelect: only owned balls are
+        // listed (starters + whatever the player unlocked in the Gear Shop).
     }
 
-    private string BallHint(int index)
+    private void RebuildBallButtons()
     {
-        if (index == 0) return " — more control";
-        if (index == 2) return " — more power";
-        return "";
+        foreach (Button b in ballButtons)
+        {
+            if (b != null) Object.Destroy(b.gameObject);
+        }
+        ballButtons.Clear();
+        // 76 px buttons, 88 px apart: even with all 8 balls owned the
+        // Back button still fits on a 1080 screen (last at -984).
+        float y = -280f;
+        for (int i = 0; i < BowlingConfig.Balls.Length; i++)
+        {
+            if (!GameProgression.OwnsBall(i)) continue;
+            int index = i;
+            string label = BowlingConfig.Balls[i].Name + " — " + BowlingConfig.Balls[i].Desc
+                + (i == GameProgression.EquippedBall ? " — Equipped" : "");
+            ballButtons.Add(CreateButton(ballPanel, label, y, 900f, 76f,
+                () => { if (OnBallSelected != null) OnBallSelected(index); }, BowlingConfig.BallKeys[i]));
+            y -= 88f;
+        }
+        ballButtons.Add(CreateButton(ballPanel, "Back", y, 760f, 76f,
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back"));
+        WireVertical(ballButtons);
     }
 
     private void BuildSparePanel()
@@ -254,6 +288,138 @@ public class BowlingUI : MonoBehaviour
         WireVertical(spareButtons);
     }
 
+    // v1.2.0: Gear Shop, Achievements and the turn-timer toggle live here,
+    // one tap off the main menu.
+    private void BuildMorePanel()
+    {
+        morePanel = CreatePanel("More", true);
+        CreateText(morePanel, "More", 56, BowlingConfig.Gold,
+            new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(1200f, 80f), TextAnchor.MiddleCenter);
+        float y = -280f;
+        moreButtons.Add(CreateButton(morePanel, "Gear Shop", y, 760f, 84f,
+            () => { if (OnOpenGear != null) OnOpenGear(); }, "gear_shop"));
+        y -= 102f;
+        moreButtons.Add(CreateButton(morePanel, "Achievements", y, 760f, 84f,
+            () => { if (OnOpenAchievements != null) OnOpenAchievements(); }, "achievements_btn"));
+        y -= 102f;
+        timerButton = CreateButton(morePanel, "Turn Timer: Off", y, 760f, 84f,
+            () => { if (OnToggleTimer != null) OnToggleTimer(); }, "timer_off");
+        moreButtons.Add(timerButton);
+        timerSpeaker = timerButton.GetComponent<ButtonSpeaker>();
+        y -= 102f;
+        moreButtons.Add(CreateButton(morePanel, "Back", y, 760f, 84f,
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back"));
+        WireVertical(moreButtons);
+
+        // Today's 3 missions, with live progress (read-only lines).
+        float my = -700f;
+        for (int i = 0; i < 3; i++)
+        {
+            missionLines[i] = CreateText(morePanel, "", 26, Color.white,
+                new Vector2(0.5f, 1f), new Vector2(0f, my), new Vector2(1500f, 44f), TextAnchor.MiddleCenter);
+            my -= 52f;
+        }
+    }
+
+    private void RefreshMissions()
+    {
+        GameProgression.MissionDef[] defs = GameProgression.MissionsToday();
+        for (int i = 0; i < 3; i++)
+        {
+            if (missionLines[i] == null) continue;
+            bool done = GameProgression.MissionDone(i);
+            int prog = GameProgression.MissionProgress(i);
+            missionLines[i].text = (done ? "Mission done: " : "Mission: ") + defs[i].Desc
+                + (done ? "" : " — " + prog + "/" + defs[i].Target);
+            missionLines[i].color = done ? BowlingConfig.Gold : Color.white;
+        }
+    }
+
+    private void BuildGearPanel()
+    {
+        gearPanel = CreatePanel("GearShop", true);
+        CreateText(gearPanel, "Gear Shop — earn coins by playing", 44, BowlingConfig.Gold,
+            new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(1500f, 70f), TextAnchor.MiddleCenter);
+        gearCoins = CreateText(gearPanel, "Coins: 0", 32, Color.white,
+            new Vector2(0.5f, 1f), new Vector2(0f, -170f), new Vector2(900f, 50f), TextAnchor.MiddleCenter);
+        // Buttons are rebuilt in ShowGear: unlockable balls, ball colours
+        // and alley looks, each showing its price or Owned / Equipped.
+    }
+
+    private void RebuildGearButtons()
+    {
+        foreach (Button b in gearButtons)
+        {
+            if (b != null) Object.Destroy(b.gameObject);
+        }
+        gearButtons.Clear();
+        if (gearCoins != null) gearCoins.text = "Coins: " + GameProgression.Coins;
+        float y = -250f;
+        for (int i = 0; i < BowlingConfig.Balls.Length; i++)
+        {
+            if (BowlingConfig.Balls[i].Cost <= 0) continue; // starters are not sold here
+            int index = i;
+            string state = GameProgression.OwnsBall(i)
+                ? (i == GameProgression.EquippedBall ? " — Equipped" : " — Owned")
+                : " — " + BowlingConfig.Balls[i].Cost + " coins";
+            gearButtons.Add(CreateButton(gearPanel, "Ball: " + BowlingConfig.Balls[i].Name + state, y, 900f, 56f,
+                () => { if (OnGearSelected != null) OnGearSelected(0, index); }, BowlingConfig.BallKeys[i], 26));
+            y -= 64f;
+        }
+        for (int i = 0; i < BowlingConfig.Skins.Length; i++)
+        {
+            int index = i;
+            string state = GameProgression.OwnsSkin(i)
+                ? (i == GameProgression.EquippedSkin ? " — Equipped" : " — Owned")
+                : " — " + BowlingConfig.Skins[i].Cost + " coins";
+            gearButtons.Add(CreateButton(gearPanel, "Colour: " + BowlingConfig.Skins[i].Name + state, y, 900f, 56f,
+                () => { if (OnGearSelected != null) OnGearSelected(1, index); }, BowlingConfig.Skins[i].Key, 26));
+            y -= 64f;
+        }
+        for (int i = 0; i < BowlingConfig.Themes.Length; i++)
+        {
+            int index = i;
+            string state = GameProgression.OwnsTheme(i)
+                ? (i == GameProgression.EquippedTheme ? " — Equipped" : " — Owned")
+                : " — " + BowlingConfig.Themes[i].Cost + " coins";
+            gearButtons.Add(CreateButton(gearPanel, "Alley: " + BowlingConfig.Themes[i].Name + state, y, 900f, 56f,
+                () => { if (OnGearSelected != null) OnGearSelected(2, index); }, BowlingConfig.Themes[i].Key, 26));
+            y -= 64f;
+        }
+        gearButtons.Add(CreateButton(gearPanel, "Back", y, 760f, 64f,
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back", 28));
+        WireVertical(gearButtons);
+    }
+
+    private void BuildAchPanel()
+    {
+        achPanel = CreatePanel("Achievements", true);
+        CreateText(achPanel, "Achievements", 56, BowlingConfig.Gold,
+            new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(1200f, 80f), TextAnchor.MiddleCenter);
+        float y = -220f;
+        for (int i = 0; i < GameProgression.Achievements.Length; i++)
+        {
+            achLines[i] = CreateText(achPanel, "", 26, Color.white,
+                new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(1500f, 44f), TextAnchor.MiddleCenter);
+            y -= 62f;
+        }
+        achButtons.Add(CreateButton(achPanel, "Back", y, 760f, 76f,
+            () => { if (OnQuitToMenu != null) OnQuitToMenu(); }, "back"));
+        WireVertical(achButtons);
+    }
+
+    private void RefreshAchievements()
+    {
+        for (int i = 0; i < GameProgression.Achievements.Length; i++)
+        {
+            if (achLines[i] == null) continue;
+            GameProgression.Achievement a = GameProgression.Achievements[i];
+            bool done = GameProgression.IsAchievementUnlocked(a.Id);
+            achLines[i].text = (done ? "Unlocked: " : "Locked: ") + a.Name + " — " + a.Desc;
+            achLines[i].color = done ? BowlingConfig.Gold : Color.white;
+        }
+    }
+
     private void BuildHUDPanel()
     {
         hudPanel = CreatePanel("HUD", false);
@@ -267,7 +433,7 @@ public class BowlingUI : MonoBehaviour
         hudPins = CreateText(hudPanel, "Pins standing: 10", 28, Color.white,
             new Vector2(0.5f, 1f), new Vector2(0f, -64f), new Vector2(700f, 40f), TextAnchor.MiddleCenter);
 
-        // Compact 10-frame scoreboard strip.
+        // Compact scoreboard strip (frames in the current match).
         scoreboardStrip = new GameObject("Scoreboard");
         scoreboardStrip.transform.SetParent(hudPanel.transform, false);
         RectTransform stripRt = scoreboardStrip.AddComponent<RectTransform>();
@@ -486,7 +652,7 @@ public class BowlingUI : MonoBehaviour
     }
 
     private Button CreateButton(GameObject parent, string label, float y, float width, float height,
-        System.Action onClick, string speakKey)
+        System.Action onClick, string speakKey, int fontSize = 34)
     {
         GameObject go = new GameObject("Btn_" + label);
         go.transform.SetParent(parent.transform, false);
@@ -517,7 +683,7 @@ public class BowlingUI : MonoBehaviour
         Text txt = labelObj.AddComponent<Text>();
         txt.font = font;
         txt.text = label;
-        txt.fontSize = 34;
+        txt.fontSize = fontSize;
         txt.alignment = TextAnchor.MiddleCenter;
         txt.color = Color.white;
 
@@ -538,6 +704,8 @@ public class BowlingUI : MonoBehaviour
     // on the gold focused background for contrast. Uses the baked voice
     // clip (SpeakKey) when one exists, so buttons speak even on a TV
     // whose Android TTS is silent; falls back to live TTS otherwise.
+    // v1.2.0: SpeakUIKey — under TalkBack the game stays quiet here, since
+    // TalkBack reads the focused button itself.
     private class ButtonSpeaker : MonoBehaviour, ISelectHandler, IDeselectHandler
     {
         public string SpeakText;
@@ -547,7 +715,7 @@ public class BowlingUI : MonoBehaviour
         public void OnSelect(BaseEventData eventData)
         {
             if (Label != null) Label.color = Color.black;
-            if (!string.IsNullOrEmpty(SpeakKey)) Narration.SpeakKey(SpeakKey, SpeakText);
+            if (!string.IsNullOrEmpty(SpeakKey)) Narration.SpeakUIKey(SpeakKey, SpeakText);
             else if (!string.IsNullOrEmpty(SpeakText)) Narration.Speak(SpeakText);
         }
 
@@ -577,6 +745,9 @@ public class BowlingUI : MonoBehaviour
         if (menuPanel != null) menuPanel.SetActive(panel == menuPanel);
         if (ballPanel != null) ballPanel.SetActive(panel == ballPanel);
         if (sparePanel != null) sparePanel.SetActive(panel == sparePanel);
+        if (morePanel != null) morePanel.SetActive(panel == morePanel);
+        if (gearPanel != null) gearPanel.SetActive(panel == gearPanel);
+        if (achPanel != null) achPanel.SetActive(panel == achPanel);
         if (hudPanel != null) hudPanel.SetActive(panel == hudPanel);
         if (gameOverPanel != null) gameOverPanel.SetActive(panel == gameOverPanel);
     }
@@ -591,7 +762,7 @@ public class BowlingUI : MonoBehaviour
 
     public void RefreshMenuLabels(int bestScore, string ballName, bool bumpersOn, bool voiceOn)
     {
-        if (menuBest != null) menuBest.text = "Best score: " + bestScore;
+        if (menuBest != null) menuBest.text = "Best score: " + bestScore + "   •   Coins: " + GameProgression.Coins;
         if (ballButton != null) ballButton.GetComponentInChildren<Text>().text = "Ball: " + ballName;
         if (bumpersButton != null) bumpersButton.GetComponentInChildren<Text>().text = "Bumpers: " + (bumpersOn ? "On" : "Off");
         if (voiceButton != null) voiceButton.GetComponentInChildren<Text>().text = "Voice: " + (voiceOn ? "On" : "Off");
@@ -602,6 +773,7 @@ public class BowlingUI : MonoBehaviour
 
     public void ShowBallSelect()
     {
+        RebuildBallButtons();
         SetOnly(ballPanel);
         if (ballButtons.Count > 0 && EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(ballButtons[0].gameObject);
@@ -612,6 +784,32 @@ public class BowlingUI : MonoBehaviour
         SetOnly(sparePanel);
         if (spareButtons.Count > 0 && EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(spareButtons[0].gameObject);
+    }
+
+    public void ShowMore(bool timerOn)
+    {
+        SetOnly(morePanel);
+        if (timerButton != null) timerButton.GetComponentInChildren<Text>().text = "Turn Timer: " + (timerOn ? "On" : "Off");
+        if (timerSpeaker != null) timerSpeaker.SpeakKey = timerOn ? "timer_on" : "timer_off";
+        RefreshMissions();
+        if (moreButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(moreButtons[0].gameObject);
+    }
+
+    public void ShowGear()
+    {
+        RebuildGearButtons();
+        SetOnly(gearPanel);
+        if (gearButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(gearButtons[0].gameObject);
+    }
+
+    public void ShowAchievements()
+    {
+        RefreshAchievements();
+        SetOnly(achPanel);
+        if (achButtons.Count > 0 && EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(achButtons[0].gameObject);
     }
 
     public void ShowHUD()
@@ -630,10 +828,15 @@ public class BowlingUI : MonoBehaviour
     }
 
     public void UpdateHUD(string player, int frame, int ball, int score, int pinsStanding,
-        string line, float power01, bool showPower)
+        string line, float power01, bool showPower, int totalFrames)
     {
         if (hudPlayer != null) hudPlayer.text = player;
-        if (hudFrame != null) hudFrame.text = "Frame " + frame + "  •  Ball " + ball;
+        if (hudFrame != null)
+        {
+            hudFrame.text = totalFrames > 0
+                ? "Frame " + frame + " of " + totalFrames + "  •  Ball " + ball
+                : "Frame " + frame + "  •  Ball " + ball;
+        }
         if (hudScore != null) hudScore.text = "Score " + score;
         if (hudPins != null) hudPins.text = "Pins standing: " + pinsStanding;
         if (hudLine != null) hudLine.text = line;
@@ -641,10 +844,13 @@ public class BowlingUI : MonoBehaviour
         if (hudPower != null) hudPower.text = showPower ? "Power " + Mathf.RoundToInt(power01 * 100f) : "";
     }
 
-    public void UpdateScoreboard(BowlingScore score, int currentFrame)
+    public void UpdateScoreboard(BowlingScore score, int currentFrame, int totalFrames)
     {
         for (int f = 1; f <= 10; f++)
         {
+            bool inMatch = f <= totalFrames;
+            if (cellImages[f - 1] != null) cellImages[f - 1].gameObject.SetActive(inMatch);
+            if (!inMatch) continue;
             if (frameMarkTexts[f - 1] != null) frameMarkTexts[f - 1].text = score.FrameRolls(f);
             int cum = score.FrameCumulativeScore(f);
             if (frameScoreTexts[f - 1] != null) frameScoreTexts[f - 1].text = cum < 0 ? "" : cum.ToString();

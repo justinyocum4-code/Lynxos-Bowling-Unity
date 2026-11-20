@@ -24,7 +24,7 @@ public class PinManager : MonoBehaviour
     public void Build()
     {
         pinMat = MakeMaterial(Color.white, 0.35f);
-        stripeMat = MakeMaterial(new Color(0.85f, 0.1f, 0.1f), 0.35f);
+        stripeMat = MakeMaterial(new Color(0.9f, 0.12f, 0.12f), 0.35f);
         for (int i = 1; i <= 10; i++)
         {
             pins.Add(CreatePin(i));
@@ -97,12 +97,13 @@ public class PinManager : MonoBehaviour
         if (pinMat != null) body.GetComponent<MeshRenderer>().material = pinMat;
         Object.Destroy(body.GetComponent<Collider>());
 
-        // Red neck stripe near the top of the pin.
+        // Red neck stripe near the top of the pin. (v1.2.0: slightly
+        // wider and brighter red, so it reads from the camera.)
         GameObject stripe = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         stripe.name = "Stripe";
         stripe.transform.SetParent(root.transform, false);
         // Primitive cylinder is 2 units tall, 1 unit across.
-        stripe.transform.localScale = new Vector3(0.13f, 0.015f, 0.13f);
+        stripe.transform.localScale = new Vector3(0.13f, 0.02f, 0.13f);
         stripe.transform.localPosition = new Vector3(0f, 0.11f, 0f);
         if (stripeMat != null) stripe.GetComponent<MeshRenderer>().material = stripeMat;
         Object.Destroy(stripe.GetComponent<Collider>());
@@ -186,6 +187,19 @@ public class PinManager : MonoBehaviour
             if (pin.Active && !IsFallen(pin)) count++;
         }
         return count;
+    }
+
+    // The pin NUMBERS still standing (1–10, standard layout), for the
+    // spoken ball-cam: "Pins 4 and 7 standing."
+    public List<int> StandingNumbers()
+    {
+        List<int> numbers = new List<int>();
+        foreach (Pin pin in pins)
+        {
+            if (pin.Active && !IsFallen(pin)) numbers.Add(pin.Number);
+        }
+        numbers.Sort();
+        return numbers;
     }
 
     // Remove the fallen pins (dead wood) between balls in the same frame.

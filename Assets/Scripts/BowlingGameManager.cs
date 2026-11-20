@@ -1,17 +1,22 @@
 // Lynxos Bowling — game orchestration: modes, turns, input, narration.
-// Input (Onn remote D-pad, matching the old v1.0): Up/Down = aim position
-// (in boards), Left/Right = hook/spin, hold OK = wind up the power meter,
-// release OK = throw. Escape/Back returns to the menu. While a menu is open
-// the D-pad drives the buttons instead (EventSystem); while aiming, no
-// button is selected so the arrows reach the game.
+// Throwing is a spoken 3-step flow (v1.2.0, Bowling Crew style, adapted
+// to D-pad + OK + voice): Step 1 position (Left/Right, OK locks it),
+// Step 2 power (hold OK to charge, release locks it), Step 3 hook
+// (Left/Right, OK throws). Every step is announced out loud.
+// Escape/Back returns to the menu. While a menu is open the D-pad drives
+// the buttons instead (EventSystem); while throwing, no button is
+// selected so the arrows reach the game.
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
-public enum BowlingMode { FullGame, Practice, SparePractice, TwoPlayer }
+public enum BowlingMode { FullGame, Practice, SparePractice, TwoPlayer, QuickMatch }
 
 public class BowlingGameManager : MonoBehaviour
 {
-    private enum GameState { Menu, BallSelect, SpareSelect, Aiming, Windup, Rolling, Resolving, GameOver }
+    private enum GameState { Menu, BallSelect, SpareSelect, More, Gear, Achievements, StepPosition, StepPower, StepHook, Rolling, Resolving, GameOver }
+
+    private const float TurnTimerSeconds = 20f;
 
     private GameState state;
     private BowlingMode mode;
@@ -29,7 +34,6 @@ public class BowlingGameManager : MonoBehaviour
     private int currentPlayer;
     private int currentFrame = 1;
     private int currentBall = 1;
-    private int ballIndex = 1; // Standard 14 lb
     private int spareIndex;
     private bool bumpersOn;
     private bool voiceOn = true;
@@ -53,6 +57,27 @@ public class BowlingGameManager : MonoBehaviour
     private string lastResult = "";
     private string startupError;
 
+    // v1.2.0: turn timer + per-game progression tracking.
+    private float turnTimer;
+    private bool warned10;
+    private bool warned5;
+    private int lastPowerBand = -1;
+    private int gamePinsTotal;
+    private bool gameHadGutter;
+    private bool dailyClaimed;
+    private bool firstBallOfGame;
+
+    // Frames in the current match: 3 for a Quick Match, 10 otherwise.
+    private int TotalFrames
+    {
+        get { return mode == BowlingMode.QuickMatch ? 3 : 10; }
+    }
+
+    private bool IsScoredMode()
+    {
+        return mode == BowlingMode.FullGame || mode == BowlingMode.QuickMatch || mode == BowlingMode.TwoPlayer;
+    }
+
     private void Awake()
     {
         scores[0] = new BowlingScore();
@@ -67,6 +92,7 @@ public class BowlingGameManager : MonoBehaviour
         lane = laneObj.AddComponent<LaneBuilder>();
         TryBuild("Lane", () => lane.Build());
         if (lane.BuildError != null) NoteError(lane.BuildError);
+        if (lane != null) lane.SetAccentColor(GameProgression.AccentColor());
 
         GameObject pinObj = new GameObject("Pins");
         pinObj.transform.SetParent(transform, false);
@@ -167,13 +193,14 @@ public class BowlingGameManager : MonoBehaviour
     {
         ui.OnAnyButton = () => { if (sound != null) sound.PlayClick(); };
         ui.OnFullGame = () => StartGame(BowlingMode.FullGame);
+        ui.OnQuickMatch = () => StartGame(BowlingMode.QuickMatch);
         ui.OnPractice = () => StartGame(BowlingMode.Practice);
         ui.OnSparePracticeMenu = () => { state = GameState.SpareSelect; ui.ShowSpareSelect(); };
         ui.OnTwoPlayers = () => StartGame(BowlingMode.TwoPlayer);
         ui.OnOpenBallSelect = () => { state = GameState.BallSelect; ui.ShowBallSelect(); };
         ui.OnBallSelected = (i) =>
         {
-            ballIndex = i;
+            GameProgression.EquippedBall = i;
             ApplyBallSpec();
             ShowMainMenu();
         };
@@ -186,19 +213,30 @@ public class BowlingGameManager : MonoBehaviour
         {
             bumpersOn = !bumpersOn;
             lane.SetBumpers(bumpersOn);
-            ui.RefreshMenuLabels(bestScore, BowlingConfig.Balls[ballIndex].Name, bumpersOn, voiceOn);
-            Narration.SpeakKey(bumpersOn ? "bumpers_on" : "bumpers_off",
+            ui.RefreshMenuLabels(bestScore, CurrentBallName(), bumpersOn, voiceOn);
+            Narration.SpeakUIKey(bumpersOn ? "bumpers_on" : "bumpers_off",
                 bumpersOn ? "Bumpers on." : "Bumpers off.");
         };
         ui.OnToggleVoice = () =>
         {
             voiceOn = !voiceOn;
             Narration.Enabled = voiceOn;
-            ui.RefreshMenuLabels(bestScore, BowlingConfig.Balls[ballIndex].Name, bumpersOn, voiceOn);
-            if (voiceOn) Narration.SpeakKey("voice_on", "Voice on.");
+            ui.RefreshMenuLabels(bestScore, CurrentBallName(), bumpersOn, voiceOn);
+            if (voiceOn) Narration.SpeakUIKey("voice_on", "Voice on.");
         };
         ui.OnPlayAgain = () => StartGame(mode);
         ui.OnQuitToMenu = () => ShowMainMenu();
+        ui.OnOpenMore = () => { state = GameState.More; ui.ShowMore(GameProgression.TimerOn); };
+        ui.OnOpenGear = () => { state = GameState.Gear; ui.ShowGear(); };
+        ui.OnOpenAchievements = () => { state = GameState.Achievements; ui.ShowAchievements(); };
+        ui.OnToggleTimer = () =>
+        {
+            GameProgression.TimerOn = !GameProgression.TimerOn;
+            ui.ShowMore(GameProgression.TimerOn);
+            Narration.SpeakUIKey(GameProgression.TimerOn ? "timer_on" : "timer_off",
+                GameProgression.TimerOn ? "Timer on." : "Timer off.");
+        };
+        ui.OnGearSelected = (kind, index) => HandleGearSelected(kind, index);
         ui.OnTouchAimLeft = () => TouchAim(-1);
         ui.OnTouchAimRight = () => TouchAim(1);
         ui.OnTouchHookLeft = () => TouchSpin(-1);
@@ -209,25 +247,96 @@ public class BowlingGameManager : MonoBehaviour
 
     private void ApplyBallSpec()
     {
-        if (ball != null) ball.SetBallSpec(BowlingConfig.Balls[ballIndex]);
+        if (ball == null) return;
+        int equipped = GameProgression.EquippedBall;
+        if (equipped < 0 || equipped >= BowlingConfig.Balls.Length) equipped = 0;
+        BowlingConfig.BallSpec spec = BowlingConfig.Balls[equipped];
+        ball.SetBallSpec(spec);
+        int skin = GameProgression.EquippedSkin;
+        Color color = (skin >= 0 && skin < BowlingConfig.Skins.Length)
+            ? BowlingConfig.Skins[skin].Color : spec.Color;
+        ball.SetBallColor(color);
     }
 
-    private bool controlsHintSpoken;
+    private string CurrentBallName()
+    {
+        int i = GameProgression.EquippedBall;
+        if (i < 0 || i >= BowlingConfig.Balls.Length) i = 0;
+        return BowlingConfig.Balls[i].Name;
+    }
+
+    // --- Gear Shop ---
+
+    private void HandleGearSelected(int kind, int index)
+    {
+        if (kind == 0)
+        {
+            bool owned = GameProgression.OwnsBall(index);
+            if (GameProgression.BuyBall(index))
+            {
+                ApplyBallSpec();
+                Narration.Speak(owned
+                    ? BowlingConfig.Balls[index].Name + " equipped."
+                    : BowlingConfig.Balls[index].Name + " unlocked!");
+                DrainAchievements();
+            }
+            else
+            {
+                Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
+            }
+        }
+        else if (kind == 1)
+        {
+            bool owned = GameProgression.OwnsSkin(index);
+            if (GameProgression.BuySkin(index))
+            {
+                ApplyBallSpec();
+                Narration.Speak(owned
+                    ? BowlingConfig.Skins[index].Name + " equipped."
+                    : BowlingConfig.Skins[index].Name + " unlocked!");
+            }
+            else
+            {
+                Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
+            }
+        }
+        else
+        {
+            bool owned = GameProgression.OwnsTheme(index);
+            if (GameProgression.BuyTheme(index))
+            {
+                if (lane != null) lane.SetAccentColor(GameProgression.AccentColor());
+                Narration.Speak(owned
+                    ? BowlingConfig.Themes[index].Name + " equipped."
+                    : BowlingConfig.Themes[index].Name + " unlocked!");
+            }
+            else
+            {
+                Narration.Speak("Not enough coins. You have " + GameProgression.Coins + ".");
+            }
+        }
+        ui.ShowGear();
+    }
 
     // --- Game flow ---
 
     private void StartGame(BowlingMode newMode)
     {
         mode = newMode;
+        int frames = newMode == BowlingMode.QuickMatch ? 3 : 10;
         scores[0].Reset();
         scores[1].Reset();
+        scores[0].TotalFrames = frames;
+        scores[1].TotalFrames = frames;
         consecutiveStrikes[0] = 0;
         consecutiveStrikes[1] = 0;
         currentPlayer = 0;
         currentFrame = 1;
         currentBall = 1;
         practiceThrows = 0;
-        controlsHintSpoken = false;
+        gamePinsTotal = 0;
+        gameHadGutter = false;
+        firstBallOfGame = true;
         lastResult = "";
         ui.ShowHUD();
         inputLockout = 0.4f;
@@ -254,18 +363,14 @@ public class BowlingGameManager : MonoBehaviour
         spin = 0;
         power = 0f;
         ball.ResetBall(aimX);
-        state = GameState.Aiming;
+        state = GameState.StepPosition;
         okWasReleased = false;
         inputLockout = 0.25f;
+        turnTimer = TurnTimerSeconds;
+        warned10 = false;
+        warned5 = false;
+        lastPowerBand = -1;
         AnnounceFrame();
-        // v1.1.4: say the controls once at the start of a game, so the
-        // aim mapping never has to be guessed at. Baked clip (aim_help);
-        // TTS is silent on Justin's TV, so a spoken line must be a clip.
-        if (!controlsHintSpoken)
-        {
-            controlsHintSpoken = true;
-            Narration.SpeakKey("aim_help", "Left and right to aim. Up and down for hook. Hold OK to throw.");
-        }
     }
 
     private void AnnounceFrame()
@@ -281,6 +386,11 @@ public class BowlingGameManager : MonoBehaviour
             line = "Spare practice. " + BowlingConfig.SpareSetups[spareIndex].Name + ". "
                 + standing + " pins standing.";
         }
+        else if (mode == BowlingMode.QuickMatch)
+        {
+            line = "Quick match. Frame " + currentFrame + " of 3, ball " + currentBall + ". "
+                + standing + " pins standing.";
+        }
         else
         {
             string who = mode == BowlingMode.TwoPlayer ? "Player " + (currentPlayer + 1) + ". " : "";
@@ -288,7 +398,19 @@ public class BowlingGameManager : MonoBehaviour
                 + standing + " pins standing.";
         }
         lastResult = line;
-        Narration.Speak(line);
+        // Step 1 clip first, then the frame line (TTS) after the clip ends
+        // — but only on the first ball of a game, so later throws are not
+        // held up by a 3-second intro every time.
+        if (firstBallOfGame)
+        {
+            firstBallOfGame = false;
+            SpeakClipThenTTS("step_position",
+                "Step 1. Position. Left and right to move, OK to lock it in.", line);
+        }
+        else
+        {
+            Narration.Speak(line);
+        }
         UpdateHUD();
     }
 
@@ -296,14 +418,27 @@ public class BowlingGameManager : MonoBehaviour
     {
         state = GameState.Menu;
         if (sound != null) sound.StopRoll();
-        ui.ShowMainMenu(bestScore, BowlingConfig.Balls[ballIndex].Name, bumpersOn, voiceOn);
-        Narration.SpeakKey("main_menu", "Lynxos Bowling. Main menu.");
+        ui.ShowMainMenu(bestScore, CurrentBallName(), bumpersOn, voiceOn);
+        Narration.SpeakUIKey("main_menu", "Lynxos Bowling. Main menu.");
+        // Daily reward, once per session (and once per day in PlayerPrefs).
+        if (!dailyClaimed)
+        {
+            dailyClaimed = true;
+            int reward = GameProgression.ClaimDaily();
+            if (reward > 0)
+            {
+                SpeakClipThenTTS("daily_reward", "Daily reward. 25 coins.",
+                    "Daily reward. " + reward + " coins.");
+                DrainAchievements();
+            }
+        }
     }
 
     private void GameOver()
     {
         state = GameState.GameOver;
         if (sound != null) sound.StopRoll();
+        bool quick = mode == BowlingMode.QuickMatch;
         int s0 = scores[0].Total();
         int s1 = scores[1].Total();
         string detail;
@@ -312,20 +447,39 @@ public class BowlingGameManager : MonoBehaviour
             string winner = s0 == s1 ? "It is a tie!" : (s0 > s1 ? "Player 1 wins!" : "Player 2 wins!");
             detail = "Player 1: " + s0 + "\nPlayer 2: " + s1 + "\n" + winner;
             Narration.SpeakKey("game_over", "Game over. Player 1 scored " + s0 + ". Player 2 scored " + s1 + ". " + winner);
+            foreach (string m in GameProgression.NoteGamePlayed()) AnnounceMission(m);
+            DrainAchievements();
         }
         else
         {
-            bool newBest = s0 > bestScore;
-            if (newBest)
+            bool newBest = false;
+            if (!quick && s0 > bestScore)
             {
+                newBest = true;
                 bestScore = s0;
                 PlayerPrefs.SetInt("LynxosBowlingBest", bestScore);
                 PlayerPrefs.Save();
             }
-            detail = "Final score: " + s0 + (newBest ? "\nNew best score!" : "\nBest score: " + bestScore);
-            Narration.SpeakKey("game_over", "Game over. Final score " + s0 + "." + (newBest ? " New best score!" : ""));
+            bool quickWin = quick && s0 >= 40;
+            detail = "Final score: " + s0 + (quickWin ? "\nQuick Match win!" : "")
+                + (newBest ? "\nNew best score!" : "\nBest score: " + bestScore);
+            Narration.SpeakKey("game_over", "Game over. Final score " + s0 + "."
+                + (quickWin ? " Quick Match win!" : "") + (newBest ? " New best score!" : ""));
+            // Progression: games played, completion coins, achievements.
+            foreach (string m in GameProgression.NoteGamePlayed()) AnnounceMission(m);
+            if (s0 >= 100) GameProgression.UnlockAchievement("century");
+            if (!quick && !gameHadGutter) GameProgression.UnlockAchievement("clean_game");
+            if (gamePinsTotal >= 50) GameProgression.UnlockAchievement("fifty_frame");
+            if (GameProgression.GamesPlayed >= 10) GameProgression.UnlockAchievement("ten_games");
+            if (quickWin)
+            {
+                GameProgression.UnlockAchievement("quick_win");
+                foreach (string m in GameProgression.NoteQuickWin()) AnnounceMission(m);
+            }
+            GameProgression.AddCoins(quick ? 10 : 20);
+            DrainAchievements();
         }
-        ui.ShowGameOver("Game Over", detail);
+        ui.ShowGameOver(quick ? "Quick Match Over" : "Game Over", detail);
     }
 
     // --- Input ---
@@ -368,11 +522,17 @@ public class BowlingGameManager : MonoBehaviour
 
         switch (state)
         {
-            case GameState.Aiming:
-                HandleAimingInput();
+            case GameState.StepPosition:
+                TickTurnTimer();
+                HandleStepPosition();
                 break;
-            case GameState.Windup:
-                HandleWindupInput();
+            case GameState.StepPower:
+                TickTurnTimer();
+                HandleStepPower();
+                break;
+            case GameState.StepHook:
+                TickTurnTimer();
+                HandleStepHook();
                 break;
             case GameState.Rolling:
                 HandleRolling();
@@ -380,13 +540,43 @@ public class BowlingGameManager : MonoBehaviour
             case GameState.Menu:
             case GameState.BallSelect:
             case GameState.SpareSelect:
+            case GameState.More:
+            case GameState.Gear:
+            case GameState.Achievements:
                 if (IsBackDown() && state != GameState.Menu) ShowMainMenu();
                 break;
         }
     }
 
-    private void HandleAimingInput()
+    // 20-second turn timer (optional, default off). Spoken warnings at 10
+    // and 5 seconds; at zero the ball is thrown with the current aim and
+    // hook (power 50 when the power step was never reached).
+    private void TickTurnTimer()
     {
+        if (!GameProgression.TimerOn) return;
+        turnTimer -= Time.deltaTime;
+        if (!warned10 && turnTimer <= 10f)
+        {
+            warned10 = true;
+            Narration.SpeakKey("time_warning_10", "Ten seconds left.");
+        }
+        else if (!warned5 && turnTimer <= 5f)
+        {
+            warned5 = true;
+            Narration.SpeakKey("time_warning_5", "Five seconds left.");
+        }
+        if (turnTimer <= 0f)
+        {
+            if (state != GameState.StepPower) power = 50f;
+            Narration.SpeakKey("time_up", "Time's up. Throwing.");
+            ThrowBall();
+        }
+    }
+
+    // Step 1 — position: Left/Right moves the starting spot, OK locks it.
+    private void HandleStepPosition()
+    {
+        if (state != GameState.StepPosition) return;
         if (inputLockout > 0f) return;
 
         // Tablet: swipe sideways on the lane to aim (about one board per
@@ -412,9 +602,6 @@ public class BowlingGameManager : MonoBehaviour
         bool okHeld = IsOkHeld();
         if (!okHeld) okWasReleased = true;
 
-        // v1.1.4: aim is Left/Right (across the lane), hook is Up/Down.
-        // The old mapping (Up/Down aim, Left/Right hook) felt backwards,
-        // and the touch buttons on TV were also eating D-pad presses.
         int aimDir = 0;
         if (Input.GetKeyDown(KeyCode.RightArrow))
         {
@@ -447,18 +634,84 @@ public class BowlingGameManager : MonoBehaviour
         }
         if (aimDir != 0) ChangeAim(aimDir);
 
-        // Hook: Up = hook right, Down = hook left.
-        if (Input.GetKeyDown(KeyCode.UpArrow)) ChangeSpin(1);
-        else if (Input.GetKeyDown(KeyCode.DownArrow)) ChangeSpin(-1);
-
-        // Hold OK to wind up (only on a fresh press, after the key was released).
+        // OK locks the position and moves to the power step (only on a
+        // fresh press, after the key was released).
         if (okWasReleased && IsOkDown())
         {
-            state = GameState.Windup;
+            state = GameState.StepPower;
             windupTime = 0f;
             power = 0f;
-            Narration.SpeakKey("winding_up", "Winding up. Release to throw.");
+            lastPowerBand = -1;
+            Narration.SpeakKey("step_power", "Step 2. Power. Hold OK to charge, let go to lock it in.");
             UpdateHUD();
+        }
+    }
+
+    // Step 2 — power: hold OK to charge (the meter sweeps up and down),
+    // release to lock the power. The percent is spoken at 25/50/75/100.
+    private void HandleStepPower()
+    {
+        if (state != GameState.StepPower) return;
+        windupTime += Time.deltaTime;
+        power = Mathf.PingPong(windupTime * 110f, 100f); // ~0.9 s up, ~0.9 s down
+        if (!IsOkHeld()) okWasReleased = true;
+
+        int band = power >= 100f ? 4 : power >= 75f ? 3 : power >= 50f ? 2 : power >= 25f ? 1 : 0;
+        if (band > lastPowerBand)
+        {
+            lastPowerBand = band;
+            if (band > 0)
+            {
+                string key = band == 1 ? "power_25" : band == 2 ? "power_50" : band == 3 ? "power_75" : "power_100";
+                string text = band == 1 ? "25 percent." : band == 2 ? "50 percent." : band == 3 ? "75 percent." : "Full power.";
+                // Interrupt: a queued band clip would lag behind the meter.
+                Narration.SpeakKeyNow(key, text);
+            }
+        }
+
+        if (IsBackDown())
+        {
+            state = GameState.StepPosition;
+            power = 0f;
+            UpdateHUD();
+            return;
+        }
+        if (IsOkUp())
+        {
+            state = GameState.StepHook;
+            Narration.SpeakKey("step_hook", "Step 3. Hook. Left and right to set the hook, OK to throw.");
+            UpdateHUD();
+            return;
+        }
+        UpdateHUD();
+    }
+
+    // Step 3 — hook: Left/Right sets the hook, OK throws.
+    private void HandleStepHook()
+    {
+        if (state != GameState.StepHook) return;
+        if (inputLockout > 0f) return;
+
+        if (IsBackDown())
+        {
+            state = GameState.StepPower;
+            windupTime = 0f;
+            power = 0f;
+            lastPowerBand = -1;
+            Narration.SpeakKey("step_power", "Step 2. Power. Hold OK to charge, let go to lock it in.");
+            UpdateHUD();
+            return;
+        }
+
+        bool okHeld = IsOkHeld();
+        if (!okHeld) okWasReleased = true;
+
+        if (Input.GetKeyDown(KeyCode.LeftArrow)) ChangeSpin(-1);
+        else if (Input.GetKeyDown(KeyCode.RightArrow)) ChangeSpin(1);
+
+        if (okWasReleased && IsOkDown())
+        {
+            ThrowBall();
         }
     }
 
@@ -466,46 +719,41 @@ public class BowlingGameManager : MonoBehaviour
 
     public void TouchAim(int dir)
     {
-        if (state == GameState.Aiming && inputLockout <= 0f) ChangeAim(dir);
+        if (state == GameState.StepPosition && inputLockout <= 0f) ChangeAim(dir);
     }
 
     public void TouchSpin(int dir)
     {
-        if (state == GameState.Aiming && inputLockout <= 0f) ChangeSpin(dir);
+        if (state == GameState.StepHook && inputLockout <= 0f) ChangeSpin(dir);
     }
 
     public void TouchThrowDown()
     {
-        if (state != GameState.Aiming || inputLockout > 0f) return;
-        state = GameState.Windup;
-        windupTime = 0f;
-        power = 0f;
-        Narration.SpeakKey("winding_up", "Winding up. Release to throw.");
-        UpdateHUD();
+        if (inputLockout > 0f) return;
+        if (state == GameState.StepPosition)
+        {
+            state = GameState.StepPower;
+            windupTime = 0f;
+            power = 0f;
+            lastPowerBand = -1;
+            Narration.SpeakKey("step_power", "Step 2. Power. Hold OK to charge, let go to lock it in.");
+            UpdateHUD();
+        }
+        else if (state == GameState.StepHook)
+        {
+            // In the hook step the big button is a tap-to-throw.
+            ThrowBall();
+        }
     }
 
     public void TouchThrowUp()
     {
-        if (state == GameState.Windup) ThrowBall();
-    }
-
-    private void HandleWindupInput()
-    {
-        windupTime += Time.deltaTime;
-        power = Mathf.PingPong(windupTime * 110f, 100f); // ~0.9 s up, ~0.9 s down
-        if (IsBackDown())
+        if (state == GameState.StepPower)
         {
-            state = GameState.Aiming;
-            power = 0f;
+            state = GameState.StepHook;
+            Narration.SpeakKey("step_hook", "Step 3. Hook. Left and right to set the hook, OK to throw.");
             UpdateHUD();
-            return;
         }
-        if (IsOkUp())
-        {
-            ThrowBall();
-            return;
-        }
-        UpdateHUD();
     }
 
     private void ChangeAim(int dir)
@@ -547,7 +795,9 @@ public class BowlingGameManager : MonoBehaviour
 
     private void ThrowBall()
     {
-        ball.SetBallSpec(BowlingConfig.Balls[ballIndex]);
+        int equipped = GameProgression.EquippedBall;
+        if (equipped < 0 || equipped >= BowlingConfig.Balls.Length) equipped = 0;
+        ball.SetBallSpec(BowlingConfig.Balls[equipped]);
         ball.ThrowBall(power / 100f, spin);
         state = GameState.Rolling;
         rollStartTime = Time.time;
@@ -593,7 +843,7 @@ public class BowlingGameManager : MonoBehaviour
             }
         }
 
-        if (sound != null) sound.SetRollVolume(Mathf.Clamp01(ball.CurrentSpeed / 8f) * 0.3f);
+        if (sound != null) sound.SetRollVolume(Mathf.Clamp01(ball.CurrentSpeed / 8f) * 0.8f);
 
         bool slow = ball.CurrentSpeed < 0.15f;
         if (slow) settleTimer += Time.deltaTime;
@@ -619,21 +869,24 @@ public class BowlingGameManager : MonoBehaviour
     {
         int fallen = pins.CountFallen();
         int standing = pins.CountStanding();
+        List<int> standingNums = pins.StandingNumbers();
         string result;
+        bool isStrike = false;
+        bool isSpare = false;
+        bool isGutter = false;
 
+        // v1.2.0: pins FIRST. The old code checked the sticky gutter flag
+        // before the strike branch, so a ball that clipped the gutter
+        // after knocking the pins down was announced as a gutter ball.
         if (mode == BowlingMode.SparePractice)
         {
             result = fallen == 10
                 ? "All pins down!"
                 : fallen + (fallen == 1 ? " pin down, " : " pins down, ") + standing + " standing.";
         }
-        else if (gutterThisRoll)
-        {
-            result = "Gutter ball. No pins down.";
-            consecutiveStrikes[currentPlayer] = 0;
-        }
         else if (fallen == 10 && currentBall == 1)
         {
+            isStrike = true;
             consecutiveStrikes[currentPlayer]++;
             result = consecutiveStrikes[currentPlayer] >= 3
                 ? "Turkey! Three strikes in a row!"
@@ -643,16 +896,24 @@ public class BowlingGameManager : MonoBehaviour
         else
         {
             if (currentBall == 1) consecutiveStrikes[currentPlayer] = 0;
-            bool isSpare = false;
+            bool spare = false;
             if (mode != BowlingMode.Practice && currentBall == 2)
             {
                 int first = scores[currentPlayer].RollInFrame(currentFrame, 0);
-                isSpare = first >= 0 && first + fallen == 10;
+                spare = first >= 0 && first + fallen == 10;
             }
-            if (isSpare)
+            if (spare)
             {
+                isSpare = true;
                 result = "Spare!";
                 if (sound != null) sound.PlaySpare();
+            }
+            else if (fallen == 0)
+            {
+                // A gutter result only when NO pins fell — never from the
+                // sticky gutter flag alone.
+                isGutter = true;
+                result = "Gutter ball. No pins down.";
             }
             else
             {
@@ -662,13 +923,32 @@ public class BowlingGameManager : MonoBehaviour
         }
 
         lastResult = result;
+        gamePinsTotal += fallen;
+        if (isGutter) gameHadGutter = true;
+
+        // Coins (scored games only, so Practice cannot be farmed) and
+        // missions / achievements.
+        if (IsScoredMode() && fallen > 0) GameProgression.AddCoins(fallen);
+        foreach (string m in GameProgression.NotePins(fallen)) AnnounceMission(m);
+        if (isStrike)
+        {
+            foreach (string m in GameProgression.NoteStrike()) AnnounceMission(m);
+            GameProgression.UnlockAchievement("first_strike");
+            if (consecutiveStrikes[currentPlayer] >= 3) GameProgression.UnlockAchievement("turkey");
+        }
+        if (isSpare)
+        {
+            foreach (string m in GameProgression.NoteSpare()) AnnounceMission(m);
+            GameProgression.UnlockAchievement("first_spare");
+        }
 
         if (mode == BowlingMode.Practice)
         {
             practiceThrows++;
-            SpeakResultLine(result, " Practice throw " + practiceThrows + ".");
+            SpeakResultLine(result, " Practice throw " + practiceThrows + ".", fallen, standingNums);
             pins.RackAll();
             currentBall = 1;
+            DrainAchievements();
             BeginBall();
             return;
         }
@@ -677,25 +957,28 @@ public class BowlingGameManager : MonoBehaviour
         {
             if (standing == 0)
             {
+                if (voiceBank != null) voiceBank.Play("down_10");
                 Narration.SpeakKey("spare_made", "Spare made! Nice shot.");
                 if (sound != null) sound.PlaySpare();
             }
             else
             {
-                SpeakResultLine(result, " " + standing + " left. Try again.");
+                SpeakResultLine(result, " " + standing + " left. Try again.", fallen, standingNums);
             }
             pins.RackPins(BowlingConfig.SpareSetups[spareIndex].Pins);
             currentBall = 1;
+            DrainAchievements();
             BeginBall();
             return;
         }
 
-        // Full game / 2 players: record the roll, then advance.
+        // Full game / 2 players / Quick Match: record the roll, then advance.
         scores[currentPlayer].AddRoll(fallen);
-        SpeakResultLine(result, " Score " + scores[currentPlayer].Total() + ".");
+        SpeakResultLine(result, " Score " + scores[currentPlayer].Total() + ".", fallen, standingNums);
+        DrainAchievements();
 
         bool frameOver;
-        if (currentFrame <= 9)
+        if (currentFrame < TotalFrames)
         {
             frameOver = (currentBall == 1 && fallen == 10) || currentBall == 2;
         }
@@ -707,9 +990,9 @@ public class BowlingGameManager : MonoBehaviour
         if (!frameOver)
         {
             currentBall++;
-            // 10th frame: a fresh rack after a strike (ball 1 or 2) or a
+            // Last frame: a fresh rack after a strike (ball 1 or 2) or a
             // spare (balls 1+2); otherwise shoot at the pins left standing.
-            if (currentFrame == 10 && NeedsFreshRack())
+            if (currentFrame == TotalFrames && NeedsFreshRack())
             {
                 pins.RackAll();
             }
@@ -721,9 +1004,9 @@ public class BowlingGameManager : MonoBehaviour
             return;
         }
 
-        if (currentFrame == 10)
+        if (currentFrame == TotalFrames)
         {
-            // Two players: player 1 still has to bowl the 10th frame.
+            // Two players: player 1 still has to bowl the last frame.
             if (mode == BowlingMode.TwoPlayer && currentPlayer == 0)
             {
                 currentPlayer = 1;
@@ -748,47 +1031,117 @@ public class BowlingGameManager : MonoBehaviour
         BeginFrame();
     }
 
-    // 10th frame only: does the next ball get a fresh full rack?
+    // Last frame only: does the next ball get a fresh full rack?
     // Ball 2: yes if ball 1 was a strike. Ball 3: yes if ball 2 was a
     // strike, or balls 1+2 made a spare.
     private bool NeedsFreshRack()
     {
-        if (currentFrame != 10) return false;
+        if (currentFrame != TotalFrames) return false;
         if (currentBall == 2)
         {
-            return scores[currentPlayer].RollInFrame(10, 0) == 10;
+            return scores[currentPlayer].RollInFrame(TotalFrames, 0) == 10;
         }
-        int b1 = scores[currentPlayer].RollInFrame(10, 0);
-        int b2 = scores[currentPlayer].RollInFrame(10, 1);
+        int b1 = scores[currentPlayer].RollInFrame(TotalFrames, 0);
+        int b2 = scores[currentPlayer].RollInFrame(TotalFrames, 1);
         if (b2 == 10) return true;
         if (b1 >= 0 && b2 >= 0 && b1 + b2 == 10) return true;
         return false;
     }
 
-    // Speaks a roll result: the baked clip when the result is a fixed
-    // line (strike, spare, gutter, turkey, all down), live TTS for
-    // anything with numbers in it. The HUD always shows the full line.
-    private void SpeakResultLine(string result, string suffix)
+    // Speaks a roll result. The ball-cam comes first: the pin-count clip
+    // ("Seven pins down.") plays, then the result clip (strike, spare,
+    // gutter, turkey, all down). For a plain count the pins left standing
+    // are dynamic, so they are spoken by TTS after the queued count clip
+    // finishes. The HUD always shows the full line.
+    private void SpeakResultLine(string result, string suffix, int fallen, List<int> standingNums)
     {
         string line = result + suffix;
+        if (voiceBank != null) voiceBank.Play("down_" + fallen);
         if (result == "Strike!") Narration.SpeakKey("strike", line);
         else if (result.StartsWith("Turkey!")) Narration.SpeakKey("turkey", line);
         else if (result == "Spare!") Narration.SpeakKey("spare", line);
         else if (result == "Gutter ball. No pins down.") Narration.SpeakKey("gutter", line);
         else if (result == "All pins down!") Narration.SpeakKey("all_down", line);
-        else Narration.Speak(line);
+        else
+        {
+            string tts = fallen + (fallen == 1 ? " pin down. Pins " : " pins down. Pins ")
+                + JoinPinNumbers(standingNums) + " standing." + suffix;
+            float delay = voiceBank != null ? voiceBank.QueuedSeconds() + 0.1f : 0.5f;
+            StartCoroutine(SpeakDelayed(tts, delay));
+        }
+    }
+
+    private string JoinPinNumbers(List<int> numbers)
+    {
+        if (numbers.Count == 0) return "";
+        if (numbers.Count == 1) return numbers[0].ToString();
+        string s = "";
+        for (int i = 0; i < numbers.Count; i++)
+        {
+            if (i > 0) s += (i == numbers.Count - 1) ? " and " : ", ";
+            s += numbers[i].ToString();
+        }
+        return s;
+    }
+
+    // --- Spoken announcements ---
+
+    // Plays a baked clip, then speaks dynamic text (TTS) once the queued
+    // clips have finished — so a clip and a TTS line never talk over each
+    // other. Falls back to plain TTS when the clip does not exist.
+    private void SpeakClipThenTTS(string clipKey, string clipFallback, string ttsText)
+    {
+        if (voiceBank != null && voiceBank.HasClip(clipKey))
+        {
+            Narration.SpeakKey(clipKey, clipFallback);
+            float delay = voiceBank.QueuedSeconds() + 0.1f;
+            StartCoroutine(SpeakDelayed(ttsText, delay));
+        }
+        else
+        {
+            Narration.Speak(ttsText);
+        }
+    }
+
+    private IEnumerator SpeakDelayed(string text, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        Narration.Speak(text);
+    }
+
+    private void AnnounceMission(string message)
+    {
+        SpeakClipThenTTS("mission_done", "Mission complete!", message);
+    }
+
+    // Announces every achievement unlocked since the last drain.
+    private void DrainAchievements()
+    {
+        string name;
+        while ((name = GameProgression.TakePendingAchievement()) != null)
+        {
+            SpeakClipThenTTS("achievement_unlocked", "Achievement unlocked!", name + " unlocked.");
+        }
     }
 
     // --- HUD ---
+
+    private string TimerText()
+    {
+        if (!GameProgression.TimerOn) return "";
+        return "   •   " + Mathf.CeilToInt(Mathf.Max(0f, turnTimer)) + "s left";
+    }
 
     private string StatusLine()
     {
         switch (state)
         {
-            case GameState.Aiming:
-                return "Aim: " + AimText() + "   •   Hook: " + HookText() + "   •   Hold OK to wind up";
-            case GameState.Windup:
-                return "Power " + Mathf.RoundToInt(power) + " — release to throw!";
+            case GameState.StepPosition:
+                return "Step 1 — Position: " + AimText() + "   •   OK to lock" + TimerText();
+            case GameState.StepPower:
+                return "Step 2 — Power " + Mathf.RoundToInt(power) + " — release to lock" + TimerText();
+            case GameState.StepHook:
+                return "Step 3 — Hook: " + HookText() + "   •   OK to throw" + TimerText();
             case GameState.Rolling:
                 return "Ball rolling…";
             default:
@@ -802,11 +1155,13 @@ public class BowlingGameManager : MonoBehaviour
         if (mode == BowlingMode.TwoPlayer) playerLabel = "Player " + (currentPlayer + 1);
         else if (mode == BowlingMode.Practice) playerLabel = "Practice";
         else if (mode == BowlingMode.SparePractice) playerLabel = "Spare Practice";
+        else if (mode == BowlingMode.QuickMatch) playerLabel = "Quick Match";
         else playerLabel = "Lynxos Bowling";
 
+        int frames = IsScoredMode() ? TotalFrames : 0;
         ui.UpdateHUD(playerLabel, currentFrame, currentBall, scores[currentPlayer].Total(),
-            pins.CountStanding(), StatusLine(), power / 100f, state == GameState.Windup);
-        ui.UpdateScoreboard(scores[currentPlayer], currentFrame);
-        ui.SetScoreboardVisible(mode == BowlingMode.FullGame || mode == BowlingMode.TwoPlayer);
+            pins.CountStanding(), StatusLine(), power / 100f, state == GameState.StepPower, frames);
+        ui.UpdateScoreboard(scores[currentPlayer], currentFrame, TotalFrames);
+        ui.SetScoreboardVisible(IsScoredMode());
     }
 }
