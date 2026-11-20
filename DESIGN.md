@@ -224,3 +224,28 @@ Changes:
   down for hook. Hold OK to throw."), spoken once at the start of a
   game (controlsHintSpoken flag, reset in StartGame).
 - Version bump 1.1.3 -> 1.1.4 (build #14).
+
+## v1.1.5 (Nov 19, 2026) — the shader chain found nothing
+
+Justin's v1.1.4 test (~10:24 PM): the game shows its own startup error
+"No 3D shader found — the scene may render pink." The error did its job
+(it told the truth instead of going pink silently), and the screen was
+still pink: with no shader found, every object kept the built-in default
+material, which URP paints magenta.
+
+Diagnosis (the v1.1.4 theory was only half right): it is not that one
+shader name is missing — the whole lookup chain came back empty
+(URP/Lit, Simple Lit, Unlit, Standard, Unlit/Color, Legacy Diffuse).
+The template ships NO materials at all, so Unity strips every URP and
+built-in shader out of the player build. Shader.Find can only find
+shaders that are in the build, so no name-based lookup can ever work
+in this project. The always-included-shaders list in ProjectSettings
+could not be relied on either (no entry found in the repo copy).
+
+Fix: the game now ships its OWN shader, Assets/Resources/Shaders/
+GameUnlit.shader — a small URP unlit shader (flat _Color, no lighting).
+A shader asset in a Resources folder is always included in the build,
+so FindGameShader loads it with Resources.Load<Shader>("Shaders/
+GameUnlit") first and keeps the Shader.Find chain only as a fallback.
+Flat colours are right for this game: wood lane, white pins, red
+stripes, gold ball. Version bump 1.1.4 -> 1.1.5 (build #16).
