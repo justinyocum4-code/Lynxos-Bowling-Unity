@@ -934,8 +934,21 @@ public class BowlingGameManager : MonoBehaviour
             // first pin contact of a roll, so this triggers once.
             slowMoTimer = 1f;
             Time.timeScale = 0.35f;
+            // v1.3.1: kill the roll loop the instant the pins are hit,
+            // so the crash is heard cleanly instead of under the wind.
+            if (sound != null) sound.StopRoll();
             if (sound != null) sound.PlayCrash(Mathf.Clamp(impactSpeed / 8f, 0.3f, 1f));
+            StartCoroutine(ScatterAfterDelay());
         }
+    }
+
+    // v1.3.1: a second, smaller clatter as the pins scatter and hit the
+    // floor, a fraction of a second after the main crash. Realtime wait
+    // so the slow-mo timeScale above does not stretch the delay.
+    private IEnumerator ScatterAfterDelay()
+    {
+        yield return new WaitForSecondsRealtime(0.25f);
+        if (sound != null) sound.PlayScatter();
     }
 
     private void HandleRolling()
@@ -955,11 +968,15 @@ public class BowlingGameManager : MonoBehaviour
             {
                 // Reached the pins with no reported pin hit (rare): play a
                 // soft crash so the throw still sounds right.
+                if (sound != null) sound.StopRoll();
                 if (sound != null) sound.PlayCrash(0.4f);
+                StartCoroutine(ScatterAfterDelay());
             }
         }
 
-        if (sound != null) sound.SetRollVolume(Mathf.Clamp01(ball.CurrentSpeed / 8f) * 0.8f);
+        // v1.3.1: the roll stays quiet (max 0.25) — v1.2.0's 0.8 made it
+        // a wind rush on TV speakers.
+        if (sound != null) sound.SetRollVolume(Mathf.Clamp01(ball.CurrentSpeed / 8f) * 0.25f);
 
         bool slow = ball.CurrentSpeed < 0.15f;
         if (slow) settleTimer += Time.deltaTime;

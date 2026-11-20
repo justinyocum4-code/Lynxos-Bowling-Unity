@@ -11,6 +11,7 @@ public class SoundSynth : MonoBehaviour
     private AudioSource rollSource;
     private AudioSource musicSource;
     private AudioClip crashClip;
+    private AudioClip scatterClip;
     private AudioClip gutterClip;
     private AudioClip cheerClip;
     private AudioClip clickClip;
@@ -34,9 +35,15 @@ public class SoundSynth : MonoBehaviour
         // v1.2.0: every clip is normalised to ~0.9 peak. The v1.1 clips
         // were near-silent BY CONSTRUCTION (roll ~0.03 out, music ~0.02,
         // crash a 0.45 s burst with a fast decay) while narration plays at
-        // 0.9, so the effects vanished next to the voice. The crash is
-        // also longer now (1.2 s, slower decay) so it reads as pins.
-        crashClip = MakeNoiseBurst("PinCrash", 1.2f, 0.9f);
+        // 0.9, so the effects vanished next to the voice.
+        // v1.3.1: the v1.2.0 fix overshot the roll — brown noise at 0.9
+        // peak through TV speakers is a loud wind rush, and the crash was
+        // the same noise family, so it vanished under the roll. The roll
+        // is now a quiet dark rumble and the crash is a real wooden
+        // clatter (staggered knocks + thump), with a scatter clatter
+        // after it.
+        crashClip = MakePinCrash("PinCrash", 1.2f);
+        scatterClip = MakePinScatter("PinScatter", 0.7f);
         gutterClip = MakeDescendingTone("Gutter", 0.7f, 420f, 140f);
         cheerClip = MakeCheer("Cheer", 1.4f);
         clickClip = MakeTone("Click", 0.07f, 880f, 0.8f);
@@ -66,6 +73,13 @@ public class SoundSynth : MonoBehaviour
         if (oneShotSource != null && crashClip != null) oneShotSource.PlayOneShot(crashClip, Mathf.Clamp01(volume));
     }
 
+    // Second, smaller clatter as the pins scatter and hit the floor.
+    // Played a fraction of a second after the main crash.
+    public void PlayScatter()
+    {
+        if (oneShotSource != null && scatterClip != null) oneShotSource.PlayOneShot(scatterClip, 0.7f);
+    }
+
     public void PlayGutter()
     {
         if (oneShotSource != null && gutterClip != null) oneShotSource.PlayOneShot(gutterClip, 0.9f);
@@ -91,7 +105,10 @@ public class SoundSynth : MonoBehaviour
         if (rollSource != null && rollClip != null && !rollSource.isPlaying)
         {
             rollSource.clip = rollClip;
-            rollSource.volume = 0.7f;
+            // v1.3.1: quiet on purpose. The v1.2.0 roll at 0.7 volume
+            // was a wind rush on TV speakers; the roll is a low rumble
+            // under the narration, not the loudest thing in the room.
+            rollSource.volume = 0.25f;
             rollSource.Play();
         }
     }
@@ -136,20 +153,72 @@ public class SoundSynth : MonoBehaviour
         for (int i = 0; i < data.Length; i++) data[i] *= scale;
     }
 
-    // White noise with an exponential decay, lightly low-passed: pin crash.
-    private AudioClip MakeNoiseBurst(string name, float seconds, float volume)
+    // v1.3.1: a real wooden pin clatter, NOT filtered noise. The old
+    // crash was white noise through a low-pass — the same sound family
+    // as the roll loop — so it read as more wind, not pins. A clatter
+    // is several short wooden knocks landing a few milliseconds apart,
+    // each a sine thump at a knock frequency with a fast decay, plus a
+    // low body thump at impact and a soft rattle tail. The staggered
+    // knocks are what the ear recognises as "pins".
+    private AudioClip MakePinCrash(string name, float seconds)
     {
         float[] data = NewBuffer(seconds);
+        // Knock times, frequencies and strengths: first hit hardest,
+        // the rest scattered as the pins fly into each other.
+        float[] knockTimes = { 0.00f, 0.02f, 0.05f, 0.09f, 0.14f, 0.21f, 0.30f };
+        float[] knockFreqs = { 280f, 420f, 350f, 520f, 300f, 610f, 380f };
+        float[] knockAmps = { 0.9f, 0.8f, 0.7f, 0.6f, 0.5f, 0.4f, 0.3f };
         float low = 0f;
         for (int i = 0; i < data.Length; i++)
         {
-            float t = (float)i / data.Length;
-            float noise = Random.Range(-1f, 1f);
-            low += 0.35f * (noise - low); // one-pole low-pass
-            float env = Mathf.Exp(-2.5f * t); // slow decay: pins keep rattling
-            data[i] = low * env * volume;
+            float t = (float)i / SampleRate;
+            float s = 0f;
+            // Low body thump at the moment of impact.
+            s += Mathf.Sin(2f * Mathf.PI * 85f * t) * Mathf.Exp(-t * 18f) * 0.9f;
+            // Staggered wooden knocks.
+            for (int k = 0; k < knockTimes.Length; k++)
+            {
+                float dt = t - knockTimes[k];
+                if (dt < 0f) continue;
+                float decay = Mathf.Exp(-dt * 55f);
+                float knock = Mathf.Sin(2f * Mathf.PI * knockFreqs[k] * dt) * decay;
+                float noise = Random.Range(-1f, 1f) * decay * 0.3f;
+                s += (knock + noise) * knockAmps[k];
+            }
+            // Soft rattle tail so the crash does not end dead.
+            float noiseTail = Random.Range(-1f, 1f);
+            low += 0.35f * (noiseTail - low);
+            s += low * Mathf.Exp(-t * 2.5f) * 0.15f;
+            data[i] = s;
         }
-        Normalize(data, 0.9f);
+        Normalize(data, 0.95f);
+        return MakeClip(name, seconds, data);
+    }
+
+    // Quieter, shorter clatter for the pins scattering after the first
+    // impact — fewer knocks, lower level, no big thump.
+    private AudioClip MakePinScatter(string name, float seconds)
+    {
+        float[] data = NewBuffer(seconds);
+        float[] knockTimes = { 0.00f, 0.06f, 0.13f, 0.22f };
+        float[] knockFreqs = { 320f, 460f, 300f, 540f };
+        float[] knockAmps = { 0.6f, 0.5f, 0.4f, 0.3f };
+        for (int i = 0; i < data.Length; i++)
+        {
+            float t = (float)i / SampleRate;
+            float s = 0f;
+            for (int k = 0; k < knockTimes.Length; k++)
+            {
+                float dt = t - knockTimes[k];
+                if (dt < 0f) continue;
+                float decay = Mathf.Exp(-dt * 60f);
+                float knock = Mathf.Sin(2f * Mathf.PI * knockFreqs[k] * dt) * decay;
+                float noise = Random.Range(-1f, 1f) * decay * 0.3f;
+                s += (knock + noise) * knockAmps[k];
+            }
+            data[i] = s;
+        }
+        Normalize(data, 0.7f);
         return MakeClip(name, seconds, data);
     }
 
@@ -223,18 +292,23 @@ public class SoundSynth : MonoBehaviour
 
     // Low brown-ish rumble, looped while the ball rolls.
     // Short fades at both ends keep the loop seamless.
+    // v1.3.1: much darker and quieter than v1.2.0. The old loop moved
+    // too fast (0.05f smoothing) and normalised to 0.9 peak, which is
+    // a wind rush on TV speakers. Slower movement keeps only the low
+    // end, and the lower peak plus the lower StartRoll volume make it
+    // a rumble under the narration instead of the loudest sound.
     private AudioClip MakeRollLoop(string name, float seconds)
     {
         float[] data = NewBuffer(seconds);
         float brown = 0f;
         for (int i = 0; i < data.Length; i++)
         {
-            brown += (Random.Range(-1f, 1f) - brown) * 0.05f;
+            brown += (Random.Range(-1f, 1f) - brown) * 0.02f;
             float fade = Mathf.Min(1f, i / (SampleRate * 0.02f));
             fade *= Mathf.Min(1f, (data.Length - i) / (SampleRate * 0.02f));
             data[i] = brown * 8f * fade;
         }
-        Normalize(data, 0.9f);
+        Normalize(data, 0.5f);
         return MakeClip(name, seconds, data);
     }
 
