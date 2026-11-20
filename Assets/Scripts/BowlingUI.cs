@@ -330,6 +330,32 @@ public class BowlingUI : MonoBehaviour
     // playing, and only on devices with a touchscreen — the TV layout is
     // untouched. Menu buttons already accept taps through the
     // StandaloneInputModule.
+    // True on Android TV devices (Onn 4K Pro). UiModeManager reports
+    // UI_MODE_TYPE_TELEVISION (4) on TVs, NORMAL (1) on phones/tablets.
+    // False on any failure, so a broken check never hides touch controls
+    // from a real touchscreen.
+    private static bool IsTelevision()
+    {
+#if UNITY_ANDROID && !UNITY_EDITOR
+        try
+        {
+            using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+            using (AndroidJavaObject activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+            using (AndroidJavaObject uiModeManager = activity.Call<AndroidJavaObject>("getSystemService", "uimode"))
+            {
+                return uiModeManager.Call<int>("getCurrentModeType") == 4;
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("[BowlingUI] TV check failed: " + e.Message);
+            return false;
+        }
+#else
+        return false;
+#endif
+    }
+
     private void BuildTouchPanel()
     {
         touchPanel = new GameObject("TouchControls");
@@ -358,7 +384,10 @@ public class BowlingUI : MonoBehaviour
         // v1.1.4: the Onn TV reports touch support though it has no
         // touchscreen, so the touch buttons showed on TV and stole the
         // D-pad from aiming. TV devices never get the touch panel.
-        touchPanel.SetActive(Input.touchSupported && SystemInfo.deviceType != DeviceType.Television);
+        // (Build #14 failed: Unity's DeviceType has no Television value.
+        // Detect TV through Android's UiModeManager instead — see
+        // IsTelevision below.)
+        touchPanel.SetActive(Input.touchSupported && !IsTelevision());
     }
 
     private GameObject CreateTouchButton(string label, Vector2 pos, Vector2 size, int fontSize,
