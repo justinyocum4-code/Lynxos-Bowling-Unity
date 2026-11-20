@@ -355,7 +355,10 @@ public class BowlingUI : MonoBehaviour
             () => { if (OnAnyButton != null) OnAnyButton(); if (OnTouchThrowDown != null) OnTouchThrowDown(); },
             () => { if (OnTouchThrowUp != null) OnTouchThrowUp(); });
 
-        touchPanel.SetActive(Input.touchSupported);
+        // v1.1.4: the Onn TV reports touch support though it has no
+        // touchscreen, so the touch buttons showed on TV and stole the
+        // D-pad from aiming. TV devices never get the touch panel.
+        touchPanel.SetActive(Input.touchSupported && SystemInfo.deviceType != DeviceType.Television);
     }
 
     private GameObject CreateTouchButton(string label, Vector2 pos, Vector2 size, int fontSize,

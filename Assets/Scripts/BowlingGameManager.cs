@@ -212,6 +212,8 @@ public class BowlingGameManager : MonoBehaviour
         if (ball != null) ball.SetBallSpec(BowlingConfig.Balls[ballIndex]);
     }
 
+    private bool controlsHintSpoken;
+
     // --- Game flow ---
 
     private void StartGame(BowlingMode newMode)
@@ -225,6 +227,7 @@ public class BowlingGameManager : MonoBehaviour
         currentFrame = 1;
         currentBall = 1;
         practiceThrows = 0;
+        controlsHintSpoken = false;
         lastResult = "";
         ui.ShowHUD();
         inputLockout = 0.4f;
@@ -255,6 +258,14 @@ public class BowlingGameManager : MonoBehaviour
         okWasReleased = false;
         inputLockout = 0.25f;
         AnnounceFrame();
+        // v1.1.4: say the controls once at the start of a game, so the
+        // aim mapping never has to be guessed at. Baked clip (aim_help);
+        // TTS is silent on Justin's TV, so a spoken line must be a clip.
+        if (!controlsHintSpoken)
+        {
+            controlsHintSpoken = true;
+            Narration.SpeakKey("aim_help", "Left and right to aim. Up and down for hook. Hold OK to throw.");
+        }
     }
 
     private void AnnounceFrame()
@@ -401,29 +412,31 @@ public class BowlingGameManager : MonoBehaviour
         bool okHeld = IsOkHeld();
         if (!okHeld) okWasReleased = true;
 
-        // Aim: Up = right, Down = left, one board per press, auto-repeat held.
+        // v1.1.4: aim is Left/Right (across the lane), hook is Up/Down.
+        // The old mapping (Up/Down aim, Left/Right hook) felt backwards,
+        // and the touch buttons on TV were also eating D-pad presses.
         int aimDir = 0;
-        if (Input.GetKeyDown(KeyCode.UpArrow))
+        if (Input.GetKeyDown(KeyCode.RightArrow))
         {
             aimDir = 1;
             aimHeldDir = 1;
             aimRepeatTimer = 0.4f;
         }
-        else if (Input.GetKeyDown(KeyCode.DownArrow))
+        else if (Input.GetKeyDown(KeyCode.LeftArrow))
         {
             aimDir = -1;
             aimHeldDir = -1;
             aimRepeatTimer = 0.4f;
         }
-        else if (Input.GetKeyUp(KeyCode.UpArrow) && aimHeldDir == 1)
+        else if (Input.GetKeyUp(KeyCode.RightArrow) && aimHeldDir == 1)
         {
             aimHeldDir = 0;
         }
-        else if (Input.GetKeyUp(KeyCode.DownArrow) && aimHeldDir == -1)
+        else if (Input.GetKeyUp(KeyCode.LeftArrow) && aimHeldDir == -1)
         {
             aimHeldDir = 0;
         }
-        else if (aimHeldDir != 0 && (Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow)))
+        else if (aimHeldDir != 0 && (Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow)))
         {
             aimRepeatTimer -= Time.deltaTime;
             if (aimRepeatTimer <= 0f)
@@ -434,9 +447,9 @@ public class BowlingGameManager : MonoBehaviour
         }
         if (aimDir != 0) ChangeAim(aimDir);
 
-        // Hook: Left = hook left, Right = hook right.
-        if (Input.GetKeyDown(KeyCode.LeftArrow)) ChangeSpin(-1);
-        else if (Input.GetKeyDown(KeyCode.RightArrow)) ChangeSpin(1);
+        // Hook: Up = hook right, Down = hook left.
+        if (Input.GetKeyDown(KeyCode.UpArrow)) ChangeSpin(1);
+        else if (Input.GetKeyDown(KeyCode.DownArrow)) ChangeSpin(-1);
 
         // Hold OK to wind up (only on a fresh press, after the key was released).
         if (okWasReleased && IsOkDown())

@@ -32,6 +32,7 @@ public class PinManager : MonoBehaviour
         RackAll();
     }
 
+    // v1.1.4: shader via BowlingConfig.FindGameShader (pipeline-aware).
     // Returns null (instead of throwing) when no shader can be found, so a
     // missing shader can never kill the start. Callers keep the primitive's
     // own default material when this returns null.
@@ -39,8 +40,7 @@ public class PinManager : MonoBehaviour
     {
         try
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = BowlingConfig.FindGameShader();
             if (shader == null)
             {
                 Debug.LogWarning("[PinManager] No shader found for material " + color + "; using default.");

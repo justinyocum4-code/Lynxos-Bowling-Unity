@@ -35,11 +35,15 @@ public class BallController : MonoBehaviour
         ballObj.name = "BowlingBall";
         ballObj.transform.localScale = Vector3.one * (BowlingConfig.BallRadius * 2f);
 
+        // v1.1.4: pipeline-aware lookup (see BowlingConfig.FindGameShader).
+        // The old URP/Lit-then-Standard lookup came back empty in the
+        // player build, so the ball kept the built-in default material and
+        // rendered magenta — and the aim guide was never created, because
+        // it only exists inside the shader!=null branch below.
         Shader shader = null;
         try
         {
-            shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            shader = BowlingConfig.FindGameShader();
         }
         catch (System.Exception e)
         {

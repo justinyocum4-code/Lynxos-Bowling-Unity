@@ -95,6 +95,34 @@ public static class BowlingConfig
 
     public static readonly Color Gold = new Color(0.96f, 0.77f, 0.09f); // #F5C518
     public static readonly Color Dark = new Color(0.04f, 0.04f, 0.04f); // #0A0A0A
+
+    // v1.1.4: pipeline-aware shader lookup. The project is URP, but the
+    // template ships no material using "Universal Render Pipeline/Lit", so
+    // that shader is not in the player build and a bare Shader.Find for it
+    // comes back empty — every 3D object then kept the built-in default
+    // material, which URP paints solid magenta (the pink screen in
+    // v1.1.3). GraphicsSettings.currentRenderPipeline is non-null exactly
+    // when a scriptable pipeline (URP here) is active. Never assign a
+    // built-in shader in a URP build or vice versa: the wrong pipeline's
+    // shader renders as solid magenta. Returns null when nothing is found.
+    public static Shader FindGameShader()
+    {
+        bool urp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline != null;
+        string[] names = urp
+            ? new string[] { "Universal Render Pipeline/Lit", "Universal Render Pipeline/Simple Lit", "Universal Render Pipeline/Unlit" }
+            : new string[] { "Standard", "Unlit/Color", "Legacy Shaders/Diffuse" };
+        foreach (string n in names)
+        {
+            Shader s = Shader.Find(n);
+            if (s != null)
+            {
+                Debug.Log("[BowlingConfig] Using shader " + n);
+                return s;
+            }
+        }
+        Debug.LogWarning("[BowlingConfig] No usable 3D shader found.");
+        return null;
+    }
 }
 
 public static class GameBootstrap

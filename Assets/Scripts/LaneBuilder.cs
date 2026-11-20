@@ -62,18 +62,21 @@ public class LaneBuilder : MonoBehaviour
         darkDotMat = MakeMaterial(new Color(0.15f, 0.1f, 0.05f), 0.3f);
     }
 
+    // v1.1.4: shader via BowlingConfig.FindGameShader (pipeline-aware).
     // Returns null (instead of throwing) when no shader can be found, so a
-    // missing shader can never kill the start. Callers keep the primitive's
+    // missing shader can never kill the start — but it records BuildError,
+    // so the failure shows and speaks on the menu instead of rendering
+    // the whole scene pink silently (v1.1.3). Callers keep the primitive's
     // own default material when this returns null.
     private Material MakeMaterial(Color color, float smoothness)
     {
         try
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = BowlingConfig.FindGameShader();
             if (shader == null)
             {
                 Debug.LogWarning("[LaneBuilder] No shader found for material " + color + "; using default.");
+                if (BuildError == null) BuildError = "No 3D shader found — the scene may render pink.";
                 return null;
             }
             Material mat = new Material(shader);
@@ -309,6 +312,9 @@ public class LaneBuilder : MonoBehaviour
 
         GameObject camObj = new GameObject("Main Camera");
         Camera cam = camObj.AddComponent<Camera>();
+        // v1.1.4: Solid Color, never Skybox — the template scene is
+        // destroyed at load, so there is no skybox to render.
+        cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.05f, 0.04f, 0.03f);
         cam.fieldOfView = 55f;
         cam.nearClipPlane = 0.1f;
