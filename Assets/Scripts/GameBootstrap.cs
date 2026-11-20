@@ -104,9 +104,24 @@ public static class BowlingConfig
     // v1.1.3). GraphicsSettings.currentRenderPipeline is non-null exactly
     // when a scriptable pipeline (URP here) is active. Never assign a
     // built-in shader in a URP build or vice versa: the wrong pipeline's
-    // shader renders as solid magenta. Returns null when nothing is found.
+    // shader renders as solid magenta.
+    // v1.1.5: the v1.1.4 chain came back EMPTY in the player build — not
+    // just Lit, every name. The template ships no materials at all, so
+    // Unity strips every URP/built-in shader out of the build, and
+    // Shader.Find can only find shaders that are in the build. So the
+    // game now ships its OWN shader (Assets/Resources/Shaders/
+    // GameUnlit.shader): a shader asset in a Resources folder is always
+    // included in the build, and Resources.Load finds it. The Find chain
+    // stays as a fallback. Returns null when nothing is found.
     public static Shader FindGameShader()
     {
+        Shader shipped = Resources.Load<Shader>("Shaders/GameUnlit");
+        if (shipped != null)
+        {
+            Debug.Log("[BowlingConfig] Using shipped shader Lynxos/GameUnlit");
+            return shipped;
+        }
+        Debug.LogWarning("[BowlingConfig] Shipped shader not found in Resources; trying Shader.Find.");
         bool urp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline != null;
         string[] names = urp
             ? new string[] { "Universal Render Pipeline/Lit", "Universal Render Pipeline/Simple Lit", "Universal Render Pipeline/Unlit" }
